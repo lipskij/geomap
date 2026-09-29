@@ -1,20 +1,43 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { Detection } from "../types";
+import type { ExportFormat } from "../export";
 import { colorFor } from "../colors";
+import { FADE_SECONDS } from "../config";
 
-const props = defineProps<{ drones: Detection[]; selected: string | null }>();
-const emit = defineEmits<{ select: [id: string] }>();
+const props = defineProps<{
+  drones: Detection[];
+  selected: string | null;
+  following: string | null;
+}>();
+const emit = defineEmits<{
+  select: [id: string];
+  follow: [id: string | null];
+  export: [id: string, format: ExportFormat];
+}>();
 
 const open = ref(true);
+const exportMenu = ref<string | null>(null);
+const formats: ExportFormat[] = ["gpx", "kml", "csv"];
 
 const sorted = computed(() =>
   [...props.drones].sort((a, b) => a.basic_id.localeCompare(b.basic_id)),
 );
 
+const age = (ts: number) => Math.max(0, Math.round(Date.now() / 1000 - ts));
+
 function ago(ts: number): string {
-  const s = Math.max(0, Math.round(Date.now() / 1000 - ts));
+  const s = age(ts);
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m`;
+}
+
+function toggleFollow(id: string) {
+  emit("follow", props.following === id ? null : id);
+}
+
+function doExport(id: string, f: ExportFormat) {
+  emit("export", id, f);
+  exportMenu.value = null;
 }
 </script>
 
@@ -27,22 +50,58 @@ function ago(ts: number): string {
 
     <ul v-if="open" class="list">
       <li v-if="!sorted.length" class="empty">No drones detected</li>
-      <li v-for="d in sorted" :key="d.basic_id">
-        <button
-          class="row"
-          :class="{ selected: d.basic_id === selected }"
-          @click="emit('select', d.basic_id)"
-        >
-          <span class="swatch" :style="{ background: colorFor(d.basic_id) }" />
-          <span class="main">
-            <span class="id">{{ d.basic_id }}</span>
-            <span class="meta">
-              {{ (d.drone_speed * 3.6).toFixed(0) }} km/h ·
-              {{ d.drone_altitude }} m · {{ d.rssi }} dBm
+      <li
+        v-for="d in sorted"
+        :key="d.basic_id"
+        class="item"
+        :class="{
+          selected: d.basic_id === selected,
+          stale: age(d.last_update) > FADE_SECONDS,
+        }"
+      >
+        <div class="line">
+          <button class="row" @click="emit('select', d.basic_id)">
+            <span
+              class="swatch"
+              :style="{ background: colorFor(d.basic_id) }"
+            />
+            <span class="main">
+              <span class="id">{{ d.basic_id }}</span>
+              <span class="meta">
+                {{ (d.drone_speed * 3.6).toFixed(0) }} km/h ·
+                {{ d.drone_altitude }} m · {{ d.rssi }} dBm
+              </span>
             </span>
-          </span>
-          <span class="age">{{ ago(d.last_update) }}</span>
-        </button>
+            <span class="age">{{ ago(d.last_update) }}</span>
+          </button>
+          <button
+            class="action"
+            :class="{ active: following === d.basic_id }"
+            :title="following === d.basic_id ? 'Stop following' : 'Follow'"
+            @click="toggleFollow(d.basic_id)"
+          >
+            ◎
+          </button>
+          <button
+            class="action"
+            :class="{ active: exportMenu === d.basic_id }"
+            title="Export track"
+            @click="exportMenu = exportMenu === d.basic_id ? null : d.basic_id"
+          >
+            ⤓
+          </button>
+        </div>
+        <div v-if="exportMenu === d.basic_id" class="export">
+          Export track:
+          <button
+            v-for="f in formats"
+            :key="f"
+            class="fmt"
+            @click="doExport(d.basic_id, f)"
+          >
+            {{ f.toUpperCase() }}
+          </button>
+        </div>
       </li>
     </ul>
   </section>
@@ -54,7 +113,7 @@ function ago(ts: number): string {
   top: 10px;
   right: 10px;
   z-index: 1000;
-  width: 300px;
+  width: 320px;
   max-width: calc(100vw - 20px);
   max-height: calc(100vh - 20px);
   display: flex;
@@ -101,18 +160,27 @@ button {
   padding: 10px 12px;
   color: #6b7280;
 }
+.item:hover {
+  background: #f3f4f6;
+}
+.item.selected {
+  background: #e0e7ff;
+}
+.item.stale {
+  opacity: 0.5;
+}
+.line {
+  display: flex;
+  align-items: center;
+  padding-right: 6px;
+}
 .row {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
-  padding: 8px 12px;
-}
-.row:hover {
-  background: #f3f4f6;
-}
-.row.selected {
-  background: #e0e7ff;
+  padding: 8px 6px 8px 12px;
 }
 .swatch {
   flex: none;
@@ -141,5 +209,41 @@ button {
   flex: none;
   color: #6b7280;
   font-size: 12px;
+}
+.action {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  text-align: center;
+  font-size: 15px;
+  color: #6b7280;
+}
+.action:hover {
+  background: #e5e7eb;
+  color: #111827;
+}
+.action.active {
+  background: #4363d8;
+  color: #fff;
+}
+.export {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 8px 34px;
+  font-size: 12px;
+  color: #6b7280;
+}
+.fmt {
+  padding: 2px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #1f2937;
+  background: #fff;
+}
+.fmt:hover {
+  background: #f3f4f6;
 }
 </style>
