@@ -51,11 +51,11 @@ npm run preview
 }
 ```
 
-| Field | Unit |
-|---|---|
-| `drone_altitude` | m |
-| `drone_speed` | m/s, horizontal |
-| `last_update` | Unix time, seconds |
+| Field            | Unit               |
+| ---------------- | ------------------ |
+| `drone_altitude` | m                  |
+| `drone_speed`    | m/s, horizontal    |
+| `last_update`    | Unix time, seconds |
 
 ## Real data
 
@@ -76,10 +76,3 @@ src/
   components/MapView.vue      # Leaflet map, markers, paths
   App.vue
 ```
-
-## Deploy
-
-Pushing to `main` deploys to GitHub Pages via `.github/workflows/deploy.yml`.
-One-time setup: **Settings → Pages → Source → GitHub Actions**.
-
-The Pages site is static, so it runs on mock data.
