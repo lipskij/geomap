@@ -21,6 +21,10 @@ npm install
 npm run dev
 ```
 
+## or
+
+Visit: https://lipskij.github.io/geomap/
+
 ```json
 {
   "1581F5FJD239C00A1B2C": {
