@@ -69,10 +69,10 @@ VITE_USE_MOCK=false npm run build
 
 ```
 src/
-  api.ts                      # fetchDetections(): mock or real API
-  types.ts                    # Detection types
-  mock/detections.ts          # simulated drones
-  composables/useDetections.ts# 1 s polling
-  components/MapView.vue      # Leaflet map, markers, paths
+  api.ts                        # fetchDetections(): mock or real API
+  types.ts                      # Detection types
+  mock/detections.ts            # simulated drones
+  composables/useDetections.ts  # 1 s polling
+  components/MapView.vue        # Leaflet map, markers, paths
   App.vue
 ```
