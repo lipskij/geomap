@@ -9,9 +9,16 @@ const props = withDefaults(
   { staleSeconds: 60 },
 );
 
+interface PopupView {
+  el: HTMLElement;
+  set: (d: Detection) => void;
+}
+
 interface Track {
   drone?: L.Marker;
   pilot?: L.Marker;
+  dronePopup: PopupView;
+  pilotPopup: PopupView;
   dronePath: L.Polyline;
   pilotPath: L.Polyline;
 }
@@ -19,6 +26,8 @@ interface Track {
 const el = ref<HTMLDivElement>();
 let map: L.Map | null = null;
 let zoomedToFirst = false;
+let moving = false; // true while the map is panning/zooming
+let pending: Detections | null = null; // latest data received mid-move
 const tracks = new Map<string, Track>();
 
 function droneIcon(color: string): L.DivIcon {
@@ -56,15 +65,58 @@ function pilotIcon(color: string): L.DivIcon {
   });
 }
 
-function popup(d: Detection, kind: "drone" | "pilot"): string {
-  const [lat, lng] =
-    kind === "drone"
-      ? [d.drone_lat, d.drone_long]
-      : [d.pilot_lat, d.pilot_long];
-  return `<b>${kind === "drone" ? "Drone" : "Pilot"}</b><br>
-ID: ${d.basic_id}<br>RSSI: ${d.rssi} dBm<br>
-${kind === "drone" ? `Alt: ${d.drone_altitude} m<br>Speed: ${d.drone_speed.toFixed(1)} m/s (${(d.drone_speed * 3.6).toFixed(0)} km/h)<br>` : ""}
-${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+async function copyText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Fallback for non-secure contexts (plain http on LAN)
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+}
+
+// Popup built once as DOM; values are updated in place so it stays live while open
+function createPopup(kind: "drone" | "pilot"): PopupView {
+  const el = document.createElement("div");
+  el.className = "rid-popup";
+  el.innerHTML = `
+    <b>${kind === "drone" ? "Drone" : "Pilot"}</b>
+    <div class="line">ID: <code data-f="id"></code><button data-copy="id" title="Copy ID">⧉</button></div>
+    <div>RSSI: <span data-f="rssi"></span> dBm</div>
+    ${kind === "drone" ? '<div>Alt: <span data-f="alt"></span> m</div><div>Speed: <span data-f="speed"></span></div>' : ""}
+    <div class="line"><code data-f="pos"></code><button data-copy="pos" title="Copy coordinates">⧉</button></div>`;
+
+  const field = (name: string) =>
+    el.querySelector<HTMLElement>(`[data-f="${name}"]`);
+
+  el.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await copyText(field(btn.dataset.copy!)?.textContent ?? "");
+      btn.textContent = "✓";
+      setTimeout(() => (btn.textContent = "⧉"), 1000);
+    });
+  });
+
+  function set(d: Detection) {
+    const [lat, lng] =
+      kind === "drone"
+        ? [d.drone_lat, d.drone_long]
+        : [d.pilot_lat, d.pilot_long];
+    field("id")!.textContent = d.basic_id;
+    field("rssi")!.textContent = String(d.rssi);
+    field("pos")!.textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    if (kind === "drone") {
+      field("alt")!.textContent = String(d.drone_altitude);
+      field("speed")!.textContent =
+        `${(d.drone_speed * 3.6).toFixed(0)} km/h (${d.drone_speed.toFixed(1)} m/s)`;
+    }
+  }
+
+  return { el, set };
 }
 
 const valid = (lat: number, lng: number) =>
@@ -74,14 +126,15 @@ function upsertMarker(
   existing: L.Marker | undefined,
   pos: L.LatLngTuple,
   icon: L.DivIcon,
-  html: string,
+  popup: PopupView,
+  d: Detection,
 ): L.Marker {
+  popup.set(d);
   if (existing) {
     existing.setLatLng(pos);
-    if (!existing.isPopupOpen()) existing.setPopupContent(html);
     return existing;
   }
-  return L.marker(pos, { icon }).bindPopup(html).addTo(map!);
+  return L.marker(pos, { icon }).bindPopup(popup.el).addTo(map!);
 }
 
 function appendPath(path: L.Polyline, pos: L.LatLngTuple) {
@@ -102,6 +155,11 @@ function removeTrack(id: string) {
 
 function update(detections: Detections) {
   if (!map) return;
+  // Redrawing paths mid-animation draws them at the wrong offset; wait for moveend
+  if (moving) {
+    pending = detections;
+    return;
+  }
   const now = Date.now() / 1000;
 
   // Drop tracks no longer present in the response
@@ -123,13 +181,15 @@ function update(detections: Detections) {
         pilotPath: L.polyline([], { color, weight: 2, dashArray: "5,5" }).addTo(
           map,
         ),
+        dronePopup: createPopup("drone"),
+        pilotPopup: createPopup("pilot"),
       };
       tracks.set(id, t);
     }
 
     if (valid(d.drone_lat, d.drone_long)) {
       const pos: L.LatLngTuple = [d.drone_lat, d.drone_long];
-      t.drone = upsertMarker(t.drone, pos, droneIcon(color), popup(d, "drone"));
+      t.drone = upsertMarker(t.drone, pos, droneIcon(color), t.dronePopup, d);
       appendPath(t.dronePath, pos);
       if (!zoomedToFirst) {
         zoomedToFirst = true;
@@ -139,27 +199,40 @@ function update(detections: Detections) {
 
     if (valid(d.pilot_lat, d.pilot_long)) {
       const pos: L.LatLngTuple = [d.pilot_lat, d.pilot_long];
-      t.pilot = upsertMarker(t.pilot, pos, pilotIcon(color), popup(d, "pilot"));
+      t.pilot = upsertMarker(t.pilot, pos, pilotIcon(color), t.pilotPopup, d);
       appendPath(t.pilotPath, pos);
     }
   }
 }
 
+// Pan/zoom to a drone and open its popup
 function focus(id: string) {
   const m = tracks.get(id)?.drone;
   if (!map || !m) return;
+  map.once("moveend", () => m.openPopup()); // opening mid-flight triggers autoPan
   map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 16), { duration: 0.6 });
-  m.openPopup();
 }
 
 defineExpose({ focus });
 
 onMounted(() => {
-  map = L.map(el.value!).setView([54.69, 25.28], 7);
+  map = L.map(el.value!, {
+    // Draw paths well beyond the viewport so they aren't cut off while flying between drones
+    renderer: L.svg({ padding: 2 }),
+  }).setView([54.69, 25.28], 7);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: "&copy; OpenStreetMap contributors",
   }).addTo(map);
+  map.on("movestart", () => (moving = true));
+  map.on("moveend", () => {
+    moving = false;
+    if (pending) {
+      const d = pending;
+      pending = null;
+      update(d);
+    }
+  });
   update(props.detections);
 });
 
@@ -184,5 +257,30 @@ onBeforeUnmount(() => {
 :deep(.rid-icon) {
   background: none;
   border: none;
+}
+:deep(.rid-popup) {
+  font-size: 13px;
+  line-height: 1.5;
+}
+:deep(.rid-popup .line) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+:deep(.rid-popup code) {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  user-select: all;
+}
+:deep(.rid-popup button) {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 14px;
+  color: #4b5563;
+}
+:deep(.rid-popup button:hover) {
+  color: #111827;
 }
 </style>

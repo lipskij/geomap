@@ -37,8 +37,8 @@ function ago(ts: number): string {
           <span class="main">
             <span class="id">{{ d.basic_id }}</span>
             <span class="meta">
-              {{ d.drone_speed.toFixed(1) }} m/s · {{ d.drone_altitude }} m ·
-              {{ d.rssi }} dBm
+              {{ (d.drone_speed * 3.6).toFixed(0) }} km/h ·
+              {{ d.drone_altitude }} m · {{ d.rssi }} dBm
             </span>
           </span>
           <span class="age">{{ ago(d.last_update) }}</span>
