@@ -77,7 +77,7 @@ src/
   composables/useTrackHistory.ts  # track history for export
   composables/useToasts.ts        # new object alerts
   components/MapView.vue          # Leaflet map, markers, paths
-  components/DroneList.vue        # object list
+  components/ObjecteList.vue      # object list
   components/ToastStack.vue       # alert messages
   App.vue
 ```
