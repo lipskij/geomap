@@ -1,8 +1,6 @@
 # GeoMap
 
-Live map of drone positions from Remote ID detections, built with Vue 3, TypeScript and Leaflet (OpenStreetMap tiles).
-
-The data model follows [WiFi-RemoteID](https://github.com/lukeswitz/WiFi-RemoteID)'s `/api/detections` format. Mock data is used by default.
+Live map of positions from Remote ID detections, built with Vue 3, TypeScript and Leaflet (OpenStreetMap tiles).
 
 ## Features
 
@@ -76,3 +74,10 @@ src/
   components/MapView.vue        # Leaflet map, markers, paths
   App.vue
 ```
+
+## Deploy
+
+Pushing to `main` deploys to GitHub Pages via `.github/workflows/deploy.yml`.
+One-time setup: **Settings → Pages → Source → GitHub Actions**.
+
+The Pages site is static, so it runs on mock data.
