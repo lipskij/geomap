@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import L from "leaflet";
 import type { Detection, Detections } from "../types";
+import { colorFor } from "../colors";
 
 const props = withDefaults(
   defineProps<{ detections: Detections; staleSeconds?: number }>(),
@@ -19,29 +20,6 @@ const el = ref<HTMLDivElement>();
 let map: L.Map | null = null;
 let zoomedToFirst = false;
 const tracks = new Map<string, Track>();
-
-const PALETTE = [
-  "#e6194b", // red
-  "#4363d8", // blue
-  "#f58231", // orange
-  "#911eb4", // purple
-  "#42d4f4", // cyan
-  "#f032e6", // magenta
-  "#3cb44b", // green
-  "#800000", // maroon
-  "#000075", // navy
-  "#9a6324", // brown
-];
-const colors = new Map<string, string>();
-
-function colorFor(id: string): string {
-  let c = colors.get(id);
-  if (!c) {
-    c = PALETTE[colors.size % PALETTE.length];
-    colors.set(id, c);
-  }
-  return c;
-}
 
 function droneIcon(color: string): L.DivIcon {
   return L.divIcon({
@@ -166,6 +144,15 @@ function update(detections: Detections) {
     }
   }
 }
+
+function focus(id: string) {
+  const m = tracks.get(id)?.drone;
+  if (!map || !m) return;
+  map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 16), { duration: 0.6 });
+  m.openPopup();
+}
+
+defineExpose({ focus });
 
 onMounted(() => {
   map = L.map(el.value!).setView([54.69, 25.28], 7);
