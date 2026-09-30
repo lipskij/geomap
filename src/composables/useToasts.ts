@@ -2,16 +2,18 @@ import { ref, watch, type Ref } from "vue";
 import type { Detection } from "../types";
 import { TOAST_MS } from "../config";
 
+export type ToastKind = "info" | "alert";
+
 export interface Toast {
   key: number;
   droneId: string;
   text: string;
+  kind: ToastKind;
 }
 
 const MAX_TOASTS = 5;
 
-// Shows a message the first time each drone ID appears in this session
-export function useNewDroneToasts(drones: Ref<Detection[]>) {
+export function useToasts(drones: Ref<Detection[]>) {
   const toasts = ref<Toast[]>([]);
   const seen = new Set<string>();
   let nextKey = 1;
@@ -20,18 +22,22 @@ export function useNewDroneToasts(drones: Ref<Detection[]>) {
     toasts.value = toasts.value.filter((t) => t.key !== key);
   }
 
+  function push(droneId: string, text: string, kind: ToastKind = "info") {
+    const key = nextKey++;
+    toasts.value = [...toasts.value, { key, droneId, text, kind }].slice(
+      -MAX_TOASTS,
+    );
+    setTimeout(() => dismiss(key), TOAST_MS);
+  }
+
+  // First time each drone ID appears in this session
   watch(drones, (list) => {
     for (const d of list) {
       if (seen.has(d.basic_id)) continue;
       seen.add(d.basic_id);
-      const key = nextKey++;
-      toasts.value = [
-        ...toasts.value,
-        { key, droneId: d.basic_id, text: "New drone detected" },
-      ].slice(-MAX_TOASTS);
-      setTimeout(() => dismiss(key), TOAST_MS);
+      push(d.basic_id, "New drone detected");
     }
   });
 
-  return { toasts, dismiss };
+  return { toasts, dismiss, push };
 }

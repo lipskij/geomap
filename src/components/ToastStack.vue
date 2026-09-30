@@ -15,6 +15,7 @@ const emit = defineEmits<{
       v-for="t in toasts"
       :key="t.key"
       class="toast"
+      :class="t.kind"
       @click="emit('select', t.droneId)"
     >
       <span class="swatch" :style="{ background: colorFor(t.droneId) }" />
@@ -61,6 +62,12 @@ const emit = defineEmits<{
     sans-serif;
   color: #1f2937;
   cursor: pointer;
+}
+.toast.alert {
+  border-left: 4px solid #dc2626;
+}
+.toast.alert .title {
+  color: #b91c1c;
 }
 .swatch {
   flex: none;

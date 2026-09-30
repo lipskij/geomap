@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import type { Detection } from "../types";
 import type { ExportFormat } from "../export";
+import type { ZoneCheck } from "../zones";
 import { colorFor } from "../colors";
 import { FADE_SECONDS } from "../config";
 
@@ -9,6 +10,7 @@ const props = defineProps<{
   drones: Detection[];
   selected: string | null;
   following: string | null;
+  checks?: Record<string, ZoneCheck>;
 }>();
 const emit = defineEmits<{
   select: [id: string];
@@ -67,6 +69,13 @@ function doExport(id: string, f: ExportFormat) {
             />
             <span class="main">
               <span class="id">{{ d.basic_id }}</span>
+              <span
+                v-if="checks?.[d.basic_id] && checks[d.basic_id].level !== 'ok'"
+                class="badge"
+                :class="checks[d.basic_id].level"
+              >
+                {{ checks[d.basic_id].label }}
+              </span>
               <span class="meta">
                 {{ (d.drone_speed * 3.6).toFixed(0) }} km/h ·
                 {{ d.drone_altitude }} m · {{ d.rssi }} dBm
@@ -204,6 +213,30 @@ button {
 .meta {
   color: #6b7280;
   font-size: 12px;
+}
+.badge {
+  align-self: flex-start;
+  margin: 2px 0;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.badge.alert {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.badge.warn {
+  background: #fef3c7;
+  color: #92400e;
+}
+.badge.info {
+  background: #e5e7eb;
+  color: #374151;
 }
 .age {
   flex: none;

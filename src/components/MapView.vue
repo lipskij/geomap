@@ -3,21 +3,35 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import L from "leaflet";
 import type { Detection, Detections } from "../types";
 import { colorFor } from "../colors";
+import {
+  RESTRICTION_LABEL,
+  type Restriction,
+  type Zone,
+  type ZoneCheck,
+} from "../zones";
 
 const props = withDefaults(
   defineProps<{
     detections: Detections;
+    zones?: Zone[];
+    checks?: Record<string, ZoneCheck>;
     following?: string | null;
     fadeSeconds?: number;
     staleSeconds?: number;
   }>(),
-  { following: null, fadeSeconds: 10, staleSeconds: 60 },
+  {
+    zones: () => [],
+    checks: () => ({}),
+    following: null,
+    fadeSeconds: 10,
+    staleSeconds: 60,
+  },
 );
 const emit = defineEmits<{ unfollow: [] }>();
 
 interface PopupView {
   el: HTMLElement;
-  set: (d: Detection) => void;
+  set: (d: Detection, check?: ZoneCheck) => void;
 }
 
 interface Track {
@@ -34,6 +48,8 @@ let map: L.Map | null = null;
 let zoomedToFirst = false;
 let moving = false; // true while the map is panning/zooming
 let pending: Detections | null = null; // latest data received mid-move
+let layersControl: L.Control.Layers | null = null;
+let zonesLayer: L.GeoJSON | null = null;
 const tracks = new Map<string, Track>();
 
 function droneIcon(color: string): L.DivIcon {
@@ -109,7 +125,8 @@ function createPopup(kind: "drone" | "pilot"): PopupView {
     <div class="line">ID: <code data-f="id"></code><button data-copy="id" title="Copy ID">⧉</button></div>
     <div>RSSI: <span data-f="rssi"></span> dBm</div>
     ${kind === "drone" ? '<div>Alt: <span data-f="alt"></span> m</div><div>Speed: <span data-f="speed"></span></div><div data-f="hdg-line">Heading: <span data-f="hdg"></span>°</div>' : ""}
-    <div class="line"><code data-f="pos"></code><button data-copy="pos" title="Copy coordinates">⧉</button></div>`;
+    <div class="line"><code data-f="pos"></code><button data-copy="pos" title="Copy coordinates">⧉</button></div>
+    ${kind === "drone" ? '<div class="zones" data-f="zones"></div>' : ""}`;
 
   const field = (name: string) =>
     el.querySelector<HTMLElement>(`[data-f="${name}"]`);
@@ -122,7 +139,7 @@ function createPopup(kind: "drone" | "pilot"): PopupView {
     });
   });
 
-  function set(d: Detection) {
+  function set(d: Detection, check?: ZoneCheck) {
     const [lat, lng] =
       kind === "drone"
         ? [d.drone_lat, d.drone_long]
@@ -138,10 +155,93 @@ function createPopup(kind: "drone" | "pilot"): PopupView {
       field("hdg-line")!.style.display = hasHdg ? "" : "none";
       if (hasHdg)
         field("hdg")!.textContent = String(Math.round(d.drone_heading!));
+      renderZones(field("zones")!, check);
     }
   }
 
   return { el, set };
+}
+
+const esc = (s: string) =>
+  s.replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ]!,
+  );
+
+// Zone status block in the drone popup
+function renderZones(el: HTMLElement, check?: ZoneCheck) {
+  if (!check) {
+    el.style.display = "none";
+    return;
+  }
+  el.style.display = "";
+  const rows = check.zones.map(
+    (z) =>
+      `<div class="zrow ${z.restriction}">${esc(RESTRICTION_LABEL[z.restriction])} · <b>${esc(z.name)}</b> · ${z.lowerM}–${z.upperM} m</div>`,
+  );
+  if (check.aboveMax)
+    rows.push('<div class="zrow above">Above 120 m limit</div>');
+  if (!rows.length) rows.push('<div class="zrow ok">No zone</div>');
+  el.innerHTML = rows.join("");
+}
+
+const ZONE_STYLE: Record<Restriction, L.PathOptions> = {
+  PROHIBITED: { color: "#dc2626", weight: 1.5, fillOpacity: 0.15 },
+  REQ_AUTHORISATION: { color: "#d97706", weight: 1, fillOpacity: 0.08 },
+  NO_RESTRICTION: {
+    color: "#6b7280",
+    weight: 1,
+    fillOpacity: 0.05,
+    dashArray: "4,4",
+  },
+};
+
+function zonePopup(z: Zone): string {
+  const when = z.temporary
+    ? z.applicability
+        .map((a) =>
+          esc(
+            `${a.startDateTime?.slice(0, 16).replace("T", " ")} – ${a.endDateTime?.slice(0, 16).replace("T", " ")} UTC`,
+          ),
+        )
+        .join("<br>")
+    : "Permanent";
+  return `<div class="rid-popup">
+    <b>${esc(z.name)}</b>
+    <div>${esc(RESTRICTION_LABEL[z.restriction])}${z.reason ? ` · ${esc(z.reason)}` : ""}</div>
+    <div>${esc(z.lowerText)} – ${esc(z.upperText)}</div>
+    <div>${when}</div>
+    ${z.message ? `<div class="zmsg">${esc(z.message)}</div>` : ""}
+  </div>`;
+}
+
+function renderZoneLayer(zones: Zone[]) {
+  if (!map) return;
+  if (!zonesLayer) {
+    map.createPane("zones").style.zIndex = "350"; // below drone paths and markers
+    const opts: L.GeoJSONOptions & { renderer: L.Renderer } = {
+      pane: "zones",
+      renderer: L.svg({ pane: "zones", padding: 2 }), // passed on to each polygon
+      style: (f) =>
+        ZONE_STYLE[(f?.properties as Zone).restriction] ??
+        ZONE_STYLE.NO_RESTRICTION,
+      onEachFeature: (f, layer) =>
+        layer.bindPopup(zonePopup(f.properties as Zone), { maxWidth: 320 }),
+    };
+    zonesLayer = L.geoJSON(undefined, opts).addTo(map);
+    layersControl?.addOverlay(zonesLayer, "Drone zones");
+  }
+  zonesLayer.clearLayers();
+  for (const z of zones) {
+    zonesLayer.addData({
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: z.rings },
+      properties: z,
+    } as GeoJSON.Feature);
+  }
 }
 
 const valid = (lat: number, lng: number) =>
@@ -153,8 +253,9 @@ function upsertMarker(
   icon: L.DivIcon,
   popup: PopupView,
   d: Detection,
+  check?: ZoneCheck,
 ): L.Marker {
-  popup.set(d);
+  popup.set(d, check);
   if (existing) {
     existing.setLatLng(pos);
     return existing;
@@ -203,9 +304,7 @@ function update(detections: Detections) {
     let t = tracks.get(id);
     if (!t) {
       t = {
-        dronePath: L.polyline([], { color, weight: 3, opacity: 0.5 }).addTo(
-          map,
-        ),
+        dronePath: L.polyline([], { color, weight: 3 }).addTo(map),
         pilotPath: L.polyline([], { color, weight: 2, dashArray: "5,5" }).addTo(
           map,
         ),
@@ -217,7 +316,14 @@ function update(detections: Detections) {
 
     if (valid(d.drone_lat, d.drone_long)) {
       const pos: L.LatLngTuple = [d.drone_lat, d.drone_long];
-      t.drone = upsertMarker(t.drone, pos, droneIcon(color), t.dronePopup, d);
+      t.drone = upsertMarker(
+        t.drone,
+        pos,
+        droneIcon(color),
+        t.dronePopup,
+        d,
+        props.checks[id],
+      );
       setHeading(t.drone, d.drone_heading);
       appendPath(t.dronePath, pos);
       if (id === props.following) followPos = pos;
@@ -236,7 +342,7 @@ function update(detections: Detections) {
     // Grey out drones that stopped updating
     t.drone?.setOpacity(faded ? 0.4 : 1);
     t.pilot?.setOpacity(faded ? 0.4 : 1);
-    t.dronePath.setStyle({ opacity: faded ? 0.3 : 0.5 });
+    t.dronePath.setStyle({ opacity: faded ? 0.3 : 1 });
     t.pilotPath.setStyle({ opacity: faded ? 0.3 : 1 });
   }
 
@@ -271,11 +377,12 @@ onMounted(() => {
   );
 
   osm.addTo(map);
-  L.control
+  layersControl = L.control
     .layers({ Map: osm, Satellite: satellite }, undefined, {
       position: "bottomright",
     })
     .addTo(map);
+  if (props.zones.length) renderZoneLayer(props.zones);
   map.on("dragstart", () => {
     if (props.following) emit("unfollow"); // manual pan cancels follow
   });
@@ -292,6 +399,7 @@ onMounted(() => {
 });
 
 watch(() => props.detections, update);
+watch(() => props.zones, renderZoneLayer);
 
 onBeforeUnmount(() => {
   tracks.clear();
@@ -333,9 +441,42 @@ onBeforeUnmount(() => {
   cursor: pointer;
   padding: 0 4px;
   font-size: 14px;
-  color: #0f63da;
+  color: #4b5563;
 }
 :deep(.rid-popup button:hover) {
   color: #111827;
+}
+:deep(.rid-popup .zones) {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid #e5e7eb;
+}
+:deep(.rid-popup .zrow) {
+  padding-left: 8px;
+  border-left: 3px solid #9ca3af;
+  margin: 2px 0;
+}
+:deep(.rid-popup .zrow.PROHIBITED) {
+  border-color: #dc2626;
+  color: #b91c1c;
+}
+:deep(.rid-popup .zrow.REQ_AUTHORISATION) {
+  border-color: #d97706;
+  color: #92400e;
+}
+:deep(.rid-popup .zrow.above) {
+  border-color: #d97706;
+  color: #92400e;
+}
+:deep(.rid-popup .zrow.ok) {
+  border-color: #16a34a;
+  color: #166534;
+}
+:deep(.rid-popup .zmsg) {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #4b5563;
+  max-height: 120px;
+  overflow-y: auto;
 }
 </style>

@@ -14,7 +14,8 @@ Live map of object positions from Remote ID detections, built with Vue 3, TypeSc
 - Popup with ID, RSSI, altitude, speed and heading; copyable ID and coordinates
 - New object alerts
 - Fades objects after 10 s without updates, removes them after 60 s
-- Map, satellite and dark map layers
+- Map, satellite layers
+- Object zones layer with zone and altitude checks (local development only, see below)
 
 ## Requirements
 
@@ -63,6 +64,19 @@ Mock data is on by default. To read from a real `/api/detections` on the same or
 VITE_USE_MOCK=false npm run build
 ```
 
+## Object zones (local only)
+
+When running `npm run dev`, the app loads Lithuanian UAS geographical zones from the ANS UTM map (`utm.ans.lt`) through the Vite dev server and:
+
+- draws them as a "Object zones" layer (red: prohibited, amber: authorisation required, grey: information)
+- checks each object: inside a zone horizontally and between the zone's lower and upper limit
+- flags objects above 120 m
+- alerts when an object enters a prohibited zone or goes above 120 m
+
+Only zones active at the current time are used; zones reload every 5 minutes. Altitude is treated as height above ground, since all zone limits are AGL.
+
+Zones are not loaded in production builds (GitHub Pages).
+
 ## Project structure
 
 ```
@@ -75,9 +89,11 @@ src/
   mock/detections.ts              # simulated objects
   composables/useDetections.ts    # 1 s polling
   composables/useTrackHistory.ts  # track history for export
-  composables/useToasts.ts        # new object alerts
+  composables/useToasts.ts        # new object and zone alerts
+  composables/useZones.ts         # loads object zones (dev only)
+  zones.ts                        # zone parsing, active times, zone/altitude check
   components/MapView.vue          # Leaflet map, markers, paths
-  components/ObjecteList.vue      # object list
+  components/ObjectList.vue        # object list
   components/ToastStack.vue       # alert messages
   App.vue
 ```

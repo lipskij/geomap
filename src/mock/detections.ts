@@ -7,6 +7,7 @@ interface MockDrone {
   speed: number; // rad/s
   phase: number;
   stopAfter?: number; // seconds; simulates a drone going silent
+  alt?: [number, number]; // base, amplitude (m above ground)
 }
 
 const drones: MockDrone[] = [
@@ -23,7 +24,8 @@ const drones: MockDrone[] = [
     radius: 0.003,
     speed: -0.05,
     phase: 2,
-  },
+    alt: [110, 25],
+  }, // climbs above 120 m
   {
     basic_id: "1668B2PQ5A00000G5H6I",
     pilot: [54.681, 25.29],
@@ -32,6 +34,14 @@ const drones: MockDrone[] = [
     phase: 4,
     stopAfter: 20,
   },
+  {
+    basic_id: "1581F6ZZK241A00P7Q8R",
+    pilot: [54.6781, 25.264],
+    radius: 0.003,
+    speed: 0.06,
+    phase: 3,
+    alt: [70, 5],
+  }, // loop crosses prohibited zone T4
 ];
 
 const M_PER_DEG_LAT = 111_320;
@@ -58,7 +68,9 @@ export function getMockDetections(): Detections {
       rssi: -50 - Math.round(Math.random() * 30),
       drone_lat: d.pilot[0] + d.radius * Math.sin(a),
       drone_long: d.pilot[1] + d.radius * 1.7 * Math.cos(a), // 1.7 ≈ lng stretch at 54°N
-      drone_altitude: 80 + Math.round(20 * Math.sin(a * 2)),
+      drone_altitude: Math.round(
+        (d.alt?.[0] ?? 80) + (d.alt?.[1] ?? 20) * Math.sin(a * 2),
+      ),
       drone_speed: active ? d.radius * M_PER_DEG_LAT * Math.abs(d.speed) : 0,
       drone_heading: Math.round((heading + 360) % 360),
       pilot_lat: d.pilot[0],
