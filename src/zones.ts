@@ -1,5 +1,13 @@
 // Drone zones from the ANS UTM map API (GeoJSON with ED-269 style properties)
 
+import { bboxOf, inPolygon, type BBox, type Rings } from "./geo";
+import {
+  matchPlan,
+  planName,
+  type OperationPlan,
+  type PlanMatch,
+} from "./plans";
+
 export type Restriction = "PROHIBITED" | "REQ_AUTHORISATION" | "NO_RESTRICTION";
 
 export interface Zone {
@@ -14,8 +22,8 @@ export interface Zone {
   upperText: string;
   temporary: boolean;
   applicability: Applicability[];
-  rings: number[][][]; // [outer, ...holes], [lng, lat]
-  bbox: [number, number, number, number]; // minLng, minLat, maxLng, maxLat
+  rings: Rings;
+  bbox: BBox;
 }
 
 interface Schedule {
@@ -31,13 +39,14 @@ interface Applicability {
   schedule?: Schedule[];
 }
 
-export type CheckLevel = "ok" | "info" | "warn" | "alert";
+export type CheckLevel = "ok" | "authorised" | "info" | "warn" | "alert";
 
 export interface ZoneCheck {
   level: CheckLevel;
   label: string; // short summary of the most severe issue
   zones: Zone[]; // zones the drone is inside (horizontally and vertically)
   aboveMax: boolean;
+  plan?: PlanMatch; // approved flight plan the drone is flying inside
 }
 
 export const RESTRICTION_LABEL: Record<Restriction, string> = {
@@ -58,7 +67,13 @@ const LEVEL: Record<Restriction, CheckLevel> = {
   REQ_AUTHORISATION: "warn",
   NO_RESTRICTION: "info",
 };
-const RANK: Record<CheckLevel, number> = { ok: 0, info: 1, warn: 2, alert: 3 };
+const RANK: Record<CheckLevel, number> = {
+  ok: 0,
+  authorised: 0,
+  info: 1,
+  warn: 2,
+  alert: 3,
+};
 
 // ---- Parsing ----
 
@@ -76,17 +91,7 @@ function parseZone(f: any): Zone | null {
   const p = f.properties ?? {};
   const g = f.geometry;
   if (p.hidden || !g || g.type !== "Polygon") return null;
-  const rings: number[][][] = g.coordinates;
-  let minLng = Infinity,
-    minLat = Infinity,
-    maxLng = -Infinity,
-    maxLat = -Infinity;
-  for (const [lng, lat] of rings[0]) {
-    minLng = Math.min(minLng, lng);
-    maxLng = Math.max(maxLng, lng);
-    minLat = Math.min(minLat, lat);
-    maxLat = Math.max(maxLat, lat);
-  }
+  const rings: Rings = g.coordinates;
   const en = p.extendedProperties?.localizedMessages?.find(
     (m: { language: string }) => m.language === "en-GB",
   )?.message;
@@ -106,7 +111,7 @@ function parseZone(f: any): Zone | null {
     temporary: applicability.every((a) => a.permanent !== "YES"),
     applicability,
     rings,
-    bbox: [minLng, minLat, maxLng, maxLat],
+    bbox: bboxOf(rings),
   };
 }
 
@@ -146,49 +151,50 @@ export function isZoneActive(z: Zone, now = new Date()): boolean {
   });
 }
 
-// ---- Geometry ----
-
-function inRing(lng: number, lat: number, ring: number[][]): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i];
-    const [xj, yj] = ring[j];
-    if (
-      yi > lat !== yj > lat &&
-      lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi
-    )
-      inside = !inside;
-  }
-  return inside;
-}
-
-function inZone(lng: number, lat: number, z: Zone): boolean {
-  const [a, b, c, d] = z.bbox;
-  if (lng < a || lng > c || lat < b || lat > d) return false;
-  if (!inRing(lng, lat, z.rings[0])) return false;
-  return !z.rings.slice(1).some((hole) => inRing(lng, lat, hole));
-}
-
 // ---- Check ----
 
-// altM is treated as height above ground (zone limits are AGL)
+// altM is treated as height above ground (zone limits are AGL).
+// plans: approved-plan data, or null when it isn't available (then no "No plan" wording).
 export function checkPosition(
   lat: number,
   lng: number,
   altM: number,
   zones: Zone[],
   maxAltM: number,
+  plans: OperationPlan[] | null = null,
 ): ZoneCheck {
   const hits = zones
-    .filter((z) => inZone(lng, lat, z) && altM >= z.lowerM && altM <= z.upperM)
+    .filter(
+      (z) =>
+        inPolygon(lng, lat, z.rings, z.bbox) &&
+        altM >= z.lowerM &&
+        altM <= z.upperM,
+    )
     .sort((a, b) => RANK[LEVEL[b.restriction]] - RANK[LEVEL[a.restriction]]);
   const aboveMax = altM > maxAltM;
+  const plan = plans ? matchPlan(lat, lng, altM, plans) : undefined;
+
+  // Inside an approved plan (area, time and height): treat as authorised
+  if (plan) {
+    return {
+      level: "authorised",
+      label: `Approved plan · ${planName(plan.plan)}`,
+      zones: hits,
+      aboveMax,
+      plan,
+    };
+  }
 
   let level: CheckLevel = "ok";
   let label = "No zone";
   if (hits.length) {
-    level = LEVEL[hits[0].restriction];
-    label = `${SHORT_LABEL[hits[0].restriction]} · ${hits[0].name}`;
+    const top = hits[0];
+    level = LEVEL[top.restriction];
+    const prefix =
+      top.restriction === "REQ_AUTHORISATION" && plans
+        ? "No plan"
+        : SHORT_LABEL[top.restriction];
+    label = `${prefix} · ${top.name}`;
   }
   if (aboveMax && RANK[level] < RANK.warn) {
     level = "warn";

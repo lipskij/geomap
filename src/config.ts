@@ -8,3 +8,5 @@ export const ZONES_ENABLED = import.meta.env.DEV;
 export const ZONES_URL = "/ans-api/utm/uas.geojson";
 export const ZONES_REFRESH_MS = 5 * 60_000; // temporary zones / NOTAMs change during the day
 export const MAX_ALT_M = 120; // EU open category limit, m above ground
+export const PLANS_URL = "/ans-api/utm/operationplans.geojson";
+export const PLANS_REFRESH_MS = 60_000; // flight plans change often
