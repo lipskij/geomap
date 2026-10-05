@@ -36,6 +36,7 @@ const done = (tx: IDBTransaction) =>
 
 // Keeps every received drone position (independent of the map) for export and stats.
 // Saved to IndexedDB so it survives page reloads.
+// POC storage; replace with the backend DB (e.g. GET /api/tracks/:id) once it exists
 export function useTrackHistory(detections: Ref<Detections>) {
   const history = new Map<string, TrackPoint[]>();
   const dirty = new Set<string>();
@@ -68,7 +69,8 @@ export function useTrackHistory(detections: Ref<Detections>) {
       const tx = db.transaction(STORE, "readwrite");
       const minT = Date.now() / 1000 - KEEP_SECONDS;
       tx.objectStore(STORE).openCursor().onsuccess = (e) => {
-        const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
+        const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>)
+          .result;
         if (!cursor) return;
         const saved: TrackPoint[] = cursor.value;
         const id = String(cursor.key);

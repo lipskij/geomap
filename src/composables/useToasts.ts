@@ -30,6 +30,7 @@ function loadAlerts(): Alert[] {
 export function useToasts(drones: Ref<Detection[]>) {
   const toasts = ref<Toast[]>([]);
   // Every toast is also kept in the alert log (newest first), saved across reloads
+  // POC storage (localStorage); move alerts + zone checks to the backend DB later
   const alerts = ref<Alert[]>(loadAlerts());
   const seen = new Set<string>();
   let nextKey = Math.max(0, ...alerts.value.map((a) => a.key)) + 1;
@@ -66,5 +67,11 @@ export function useToasts(drones: Ref<Detection[]>) {
     }
   });
 
-  return { toasts, dismiss, push, alerts, clearAlerts: () => (alerts.value = []) };
+  return {
+    toasts,
+    dismiss,
+    push,
+    alerts,
+    clearAlerts: () => (alerts.value = []),
+  };
 }
