@@ -189,12 +189,14 @@ function onExport(id: string, format: ExportFormat) {
   <p v-else-if="zonesError" class="error">
     Failed to load drone zones: {{ zonesError }}
   </p>
+  <!-- right-inset: drone panel is 320 px wide + 10 px margin, plus a 10 px gap -->
   <MapView
     ref="mapView"
     :detections="detections"
     :zones="activeZones"
     :checks="checks"
     :following="following"
+    :right-inset="340"
     @unfollow="following = null"
   />
   <DroneList

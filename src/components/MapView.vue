@@ -19,6 +19,7 @@ const props = defineProps<{
   zones: Zone[];
   checks: Record<string, ZoneCheck>;
   following: string | null;
+  rightInset: number; // px of the map covered by the panel on the right
 }>();
 const emit = defineEmits<{ unfollow: [] }>();
 
@@ -210,7 +211,9 @@ function upsertMarker(
     existing.setLatLng(pos);
     return existing;
   }
-  return L.marker(pos, { icon }).bindPopup(popup.el).addTo(map!);
+  return L.marker(pos, { icon })
+    .bindPopup(popup.el, { autoPanPaddingBottomRight: [inset() + 10, 10] })
+    .addTo(map!);
 }
 
 function appendPath(path: L.Polyline, pos: L.LatLngTuple) {
@@ -276,6 +279,7 @@ function update(detections: Detections) {
   for (const id of tracks.keys()) if (!(id in detections)) removeTrack(id);
 
   let followPos: L.LatLngTuple | null = null;
+  let followLift = 0;
 
   for (const [id, d] of Object.entries(detections)) {
     if (!d.last_update || now - d.last_update > STALE_SECONDS) {
@@ -316,10 +320,13 @@ function update(detections: Detections) {
       // Replayed paths are set by the replay (setPath), in recording time
       if (!id.startsWith(REPLAY_PREFIX))
         appendDronePath(t, [pos[0], pos[1], d.last_update * 1000]);
-      if (id === props.following) followPos = pos;
+      if (id === props.following) {
+        followPos = pos;
+        followLift = popupLift(t.drone);
+      }
       if (!zoomedToFirst) {
         zoomedToFirst = true;
-        map.setView(pos, 15);
+        map.setView(visibleCenter(pos, 15), 15);
       }
     }
 
@@ -337,15 +344,40 @@ function update(detections: Detections) {
     t.pilotPath.setStyle({ opacity: faded ? 0.3 : 1 });
   }
 
-  if (followPos) map.panTo(followPos, { animate: true, duration: 0.5 });
+  if (followPos)
+    map.panTo(visibleCenter(followPos, map.getZoom(), followLift), {
+      animate: true,
+      duration: 0.5,
+    });
 }
+
+// Covered width, capped so narrow screens (panel over most of the map) still get a center
+const inset = () => Math.min(props.rightInset, (map?.getSize().x ?? 0) / 2);
+
+// Map center that puts `pos` in the middle of the part not covered by the panel.
+// lift: px to place `pos` below the middle, so an open popup above it is centered too.
+function visibleCenter(pos: L.LatLngExpression, zoom: number, lift = 0): L.LatLng {
+  return map!.unproject(map!.project(pos, zoom).add([inset() / 2, -lift]), zoom);
+}
+
+// Half the height of the marker's open popup (0 when closed)
+const popupLift = (m: L.Marker) =>
+  m.isPopupOpen() ? (m.getPopup()?.getElement()?.offsetHeight ?? 0) / 2 : 0;
 
 // Pan/zoom to a drone and open its popup. Returns false if the drone isn't on the map yet.
 function focus(id: string): boolean {
   const m = tracks.get(id)?.drone;
   if (!map || !m) return false;
-  map.once("moveend", () => m.openPopup()); // opening mid-flight triggers autoPan
-  map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 16), { duration: 0.6 });
+  // Open first without autoPan (it would jump the map after the flight), then fly so the
+  // drone and its popup end up centered together
+  const popup = m.getPopup()!;
+  popup.options.autoPan = false;
+  m.openPopup();
+  popup.options.autoPan = true;
+  const zoom = Math.max(map.getZoom(), 16);
+  map.flyTo(visibleCenter(m.getLatLng(), zoom, popupLift(m)), zoom, {
+    duration: 0.6,
+  });
   return true;
 }
 
