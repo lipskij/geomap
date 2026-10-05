@@ -6,7 +6,6 @@ export interface ReplayPoint {
   lng: number;
   alt: number; // m
   speed?: number; // m/s
-  heading?: number; // degrees
   rssi?: number;
   pilotLat?: number;
   pilotLng?: number;
@@ -101,7 +100,6 @@ const COLUMNS = {
   ],
   speedKmh: ["speed_kmh"],
   speed: ["drone_speed", "speed_ms", "speed"],
-  heading: ["drone_heading", "heading_deg", "heading", "direction", "course"],
   rssi: ["rssi_dbm", "rssi"],
   pilotLat: ["pilot_lat"],
   pilotLng: ["pilot_long", "pilot_lng", "pilot_lon"],
@@ -138,7 +136,6 @@ function parseCsv(text: string, fallbackId: string): ReplayTrack[] {
       lng: num(get(r, c.lng)) ?? NaN,
       alt: num(get(r, c.alt)) ?? 0,
       speed: kmh !== undefined ? kmh / 3.6 : num(get(r, c.speed)),
-      heading: num(get(r, c.heading)),
       rssi: num(get(r, c.rssi)),
       pilotLat: num(get(r, c.pilotLat)),
       pilotLng: num(get(r, c.pilotLng)),

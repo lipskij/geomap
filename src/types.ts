@@ -6,7 +6,6 @@ export interface Detection {
   drone_long: number;
   drone_altitude: number;
   drone_speed: number; // horizontal, m/s
-  drone_heading?: number;
   pilot_lat: number;
   pilot_long: number;
   last_update: number; // unix seconds

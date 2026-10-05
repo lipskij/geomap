@@ -7,7 +7,6 @@ export interface TrackPoint {
   lng: number;
   alt: number;
   speed: number; // m/s
-  heading?: number;
   rssi: number;
 }
 
@@ -29,7 +28,6 @@ export function useTrackHistory(detections: Ref<Detections>) {
         lng: d.drone_long,
         alt: d.drone_altitude,
         speed: d.drone_speed,
-        heading: d.drone_heading,
         rssi: d.rssi,
       });
       if (pts.length > MAX_POINTS) pts.shift();

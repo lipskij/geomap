@@ -65,11 +65,11 @@ const tracks = new Map<string, Track>();
 function droneIcon(color: string): L.DivIcon {
   return L.divIcon({
     className: "rid-icon",
-    iconSize: [54, 54],
-    iconAnchor: [27, 27],
-    popupAnchor: [0, -20],
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -16],
     html: `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-11 -11 54 54" width="54" height="54">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
   <g stroke="#1f2937" stroke-width="2" stroke-linecap="round">
     <line x1="8" y1="8" x2="24" y2="24"/><line x1="24" y1="8" x2="8" y2="24"/>
   </g>
@@ -78,23 +78,8 @@ function droneIcon(color: string): L.DivIcon {
     <circle cx="7" cy="25" r="5"/><circle cx="25" cy="25" r="5"/>
   </g>
   <rect x="12" y="12" width="8" height="8" rx="2" fill="${color}" stroke="#1f2937" stroke-width="1.5"/>
-  <g class="heading" style="display:none">
-    <polygon points="16,-10 11.5,-4 20.5,-4" fill="${color}" stroke="#1f2937" stroke-width="1.2" stroke-linejoin="round"/>
-  </g>
 </svg>`,
   });
-}
-
-// Rotate the arrow in place (no icon rebuild); hidden when the source has no heading
-function setHeading(marker: L.Marker, heading: number | undefined) {
-  const g = marker.getElement()?.querySelector<SVGGElement>(".heading");
-  if (!g) return;
-  if (heading === undefined || !Number.isFinite(heading)) {
-    g.style.display = "none";
-    return;
-  }
-  g.style.display = "";
-  g.setAttribute("transform", `rotate(${heading} 16 16)`); // rotate around drone center
 }
 
 function pilotIcon(color: string): L.DivIcon {
@@ -134,7 +119,7 @@ function createPopup(kind: "drone" | "pilot"): PopupView {
     <b>${kind === "drone" ? "Drone" : "Pilot"}</b>
     <div class="line">ID: <code data-f="id"></code><button data-copy="id" title="Copy ID">⧉</button></div>
     <div>RSSI: <span data-f="rssi"></span> dBm</div>
-    ${kind === "drone" ? '<div>Alt: <span data-f="alt"></span> m</div><div>Speed: <span data-f="speed"></span></div><div data-f="hdg-line">Heading: <span data-f="hdg"></span>°</div>' : ""}
+    ${kind === "drone" ? '<div>Alt: <span data-f="alt"></span> m</div><div>Speed: <span data-f="speed"></span></div>' : ""}
     <div class="line"><code data-f="pos"></code><button data-copy="pos" title="Copy coordinates">⧉</button></div>
     ${kind === "drone" ? '<div class="zones" data-f="zones"></div>' : ""}`;
 
@@ -161,10 +146,6 @@ function createPopup(kind: "drone" | "pilot"): PopupView {
       field("alt")!.textContent = String(d.drone_altitude);
       field("speed")!.textContent =
         `${(d.drone_speed * 3.6).toFixed(0)} km/h (${d.drone_speed.toFixed(1)} m/s)`;
-      const hasHdg = d.drone_heading !== undefined;
-      field("hdg-line")!.style.display = hasHdg ? "" : "none";
-      if (hasHdg)
-        field("hdg")!.textContent = String(Math.round(d.drone_heading!));
       renderZones(field("zones")!, check);
     }
   }
@@ -394,7 +375,6 @@ function update(detections: Detections) {
         d,
         props.checks[id],
       );
-      setHeading(t.drone, d.drone_heading);
       appendPath(t.dronePath, pos);
       if (id === props.following) followPos = pos;
       if (!zoomedToFirst) {

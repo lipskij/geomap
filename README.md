@@ -8,10 +8,9 @@ Live map of object positions from Remote ID detections, built with Vue 3, TypeSc
 
 - Polls detections every second and moves existing markers in place (no redraw flicker)
 - Object and pilot markers with flight paths (solid for objects, dashed for pilot)
-- Heading arrow when the source provides direction
 - Distinct color per object
 - Expandable object list: click to focus, follow mode, per-object track export (GPX, KML, CSV)
-- Popup with ID, RSSI, altitude, speed and heading; copyable ID and coordinates
+- Popup with ID, RSSI, altitude and speed; copyable ID and coordinates
 - New object alerts
 - Fades objects after 10 s without updates, removes them after 60 s
 - Map, satellite map layers
@@ -41,7 +40,6 @@ npm run dev
     "d_long": 25.2864,
     "d_altitude": 84,
     "d_speed": 13.4,
-    "d_heading": 305,
     "pilot_lat": 54.6872,
     "pilot_long": 25.2797,
     "last_update": 1790000000
@@ -49,12 +47,11 @@ npm run dev
 }
 ```
 
-| Field         | Unit                              |
-| ------------- | --------------------------------- |
-| `d_altitude`  | m                                 |
-| `d_speed`     | m/s, horizontal                   |
-| `d_heading`   | degrees from true north, optional |
-| `last_update` | Unix time, seconds                |
+| Field         | Unit               |
+| ------------- | ------------------ |
+| `d_altitude`  | m                  |
+| `d_speed`     | m/s, horizontal    |
+| `last_update` | Unix time, seconds |
 
 ## Real data
 

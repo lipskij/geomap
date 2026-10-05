@@ -21,14 +21,6 @@ function distanceM(a: ReplayPoint, b: ReplayPoint): number {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-function bearing(a: ReplayPoint, b: ReplayPoint): number {
-  const y = Math.sin(rad(b.lng - a.lng)) * Math.cos(rad(b.lat));
-  const x =
-    Math.cos(rad(a.lat)) * Math.sin(rad(b.lat)) -
-    Math.sin(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.cos(rad(b.lng - a.lng));
-  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
-}
-
 // Last point index with t <= time
 function indexAt(pts: ReplayPoint[], time: number): number {
   let lo = 0;
@@ -73,7 +65,7 @@ export function useReplay() {
       const b = pts[Math.min(i + 1, pts.length - 1)];
       const ended = i === pts.length - 1;
       const f = ended ? 0 : (abs - a.t) / (b.t - a.t);
-      const seg = ended ? pts[i - 1] : a; // segment used for speed / heading
+      const seg = ended ? pts[i - 1] : a; // segment used for speed
       const segEnd = ended ? a : b;
       const id = REPLAY_PREFIX + track.id;
       out[id] = {
@@ -85,7 +77,6 @@ export function useReplay() {
         drone_speed: ended
           ? 0
           : (a.speed ?? distanceM(seg, segEnd) / ((segEnd.t - seg.t) / 1000)),
-        drone_heading: a.heading ?? bearing(seg, segEnd),
         pilot_lat: a.pilotLat ?? 0,
         pilot_long: a.pilotLng ?? 0,
         // After its last point a drone ages like a silent one (fades, then disappears)
