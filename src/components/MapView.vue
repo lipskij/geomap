@@ -7,12 +7,8 @@ import { copyText, esc } from "../export";
 import { fmtPos, validPos } from "../geo";
 import { FADE_SECONDS, GAP_SECONDS, MAX_ALT_M, STALE_SECONDS } from "../config";
 import { REPLAY_PREFIX } from "../composables/useReplay";
-import {
-  RESTRICTION_LABEL,
-  type Restriction,
-  type Zone,
-  type ZoneCheck,
-} from "../zones";
+import type { Restriction, Zone, ZoneCheck } from "../zones";
+import { LANGS, lang, t, type Lang, type MsgKey } from "../i18n";
 
 const props = defineProps<{
   detections: Detections;
@@ -46,6 +42,19 @@ let moving = false; // true while the map is panning/zooming
 let pending: Detections | null = null; // latest data received mid-move
 let layersControl: L.Control.Layers | null = null;
 let zonesLayer: L.GeoJSON | null = null;
+let baseLayers: [L.TileLayer, MsgKey][] = [];
+let langRow: HTMLElement | null = null;
+
+// (Re)add layer entries with names in the current language; keeps their order
+function labelLayers() {
+  if (!layersControl) return;
+  for (const [layer] of baseLayers) layersControl.removeLayer(layer);
+  for (const [layer, key] of baseLayers) layersControl.addBaseLayer(layer, t(key));
+  if (zonesLayer) {
+    layersControl.removeLayer(zonesLayer);
+    layersControl.addOverlay(zonesLayer, t("layer.zones"));
+  }
+}
 const tracks = new Map<string, Track>();
 
 function droneIcon(color: string): L.DivIcon {
@@ -83,17 +92,28 @@ function pilotIcon(color: string): L.DivIcon {
   });
 }
 
+// Fill text of [data-l] elements and titles of [data-lt] elements in the current language
+function applyLabels(root: ParentNode) {
+  root.querySelectorAll<HTMLElement>("[data-l]").forEach((n) => {
+    n.textContent = t(n.dataset.l as MsgKey);
+  });
+  root.querySelectorAll<HTMLElement>("[data-lt]").forEach((n) => {
+    n.title = t(n.dataset.lt as MsgKey);
+  });
+}
+
 // Popup built once as DOM; values are updated in place so it stays live while open
 function createPopup(kind: "drone" | "pilot"): PopupView {
   const el = document.createElement("div");
   el.className = "rid-popup";
   el.innerHTML = `
-    <b>${kind === "drone" ? "Drone" : "Pilot"}</b>
-    <div class="line">ID: <code data-f="id"></code><button class=copyBtn data-copy="id" title="Copy ID">⧉</button></div>
+    <b data-l="popup.${kind}"></b>
+    <div class="line">ID: <code data-f="id"></code><button class=copyBtn data-copy="id" data-lt="copy.id">⧉</button></div>
     <div>RSSI: <span data-f="rssi"></span> dBm</div>
-    ${kind === "drone" ? '<div>Alt: <span data-f="alt"></span> m</div><div>Speed: <span data-f="speed"></span></div>' : ""}
-    <div class="line"><code data-f="pos"></code><button class=copyBtn data-copy="pos" title="Copy coordinates">⧉</button></div>
+    ${kind === "drone" ? '<div><span data-l="popup.alt"></span>: <span data-f="alt"></span> m</div><div><span data-l="popup.speed"></span>: <span data-f="speed"></span></div>' : ""}
+    <div class="line"><code data-f="pos"></code><button class=copyBtn data-copy="pos" data-lt="copy.coords">⧉</button></div>
     ${kind === "drone" ? '<div class="zones" data-f="zones"></div>' : ""}`;
+  applyLabels(el);
 
   const field = (name: string) =>
     el.querySelector<HTMLElement>(`[data-f="${name}"]`);
@@ -134,11 +154,13 @@ function renderZones(el: HTMLElement, check?: ZoneCheck) {
   el.style.display = "";
   const rows = check.zones.map(
     (z) =>
-      `<div class="zrow ${z.restriction}">${esc(RESTRICTION_LABEL[z.restriction])} · <b>${esc(z.name)}</b> · ${z.lowerM}–${z.upperM} m</div>`,
+      `<div class="zrow ${z.restriction}">${esc(t(`zone.${z.restriction}`))} · <b>${esc(z.name)}</b> · ${z.lowerM}–${z.upperM} m</div>`,
   );
   if (check.aboveMax)
-    rows.push(`<div class="zrow above">Above ${MAX_ALT_M} m limit</div>`);
-  if (!rows.length) rows.push('<div class="zrow ok">No zone</div>');
+    rows.push(
+      `<div class="zrow above">${esc(t("popup.aboveLimit", { m: MAX_ALT_M }))}</div>`,
+    );
+  if (!rows.length) rows.push(`<div class="zrow ok">${esc(t("zone.none"))}</div>`);
   el.innerHTML = rows.join("");
 }
 
@@ -162,13 +184,13 @@ function zonePopup(z: Zone): string {
           ),
         )
         .join("<br>")
-    : "Permanent";
+    : esc(t("zone.permanent"));
   return `<div class="rid-popup">
     <b>${esc(z.name)}</b>
-    <div>${esc(RESTRICTION_LABEL[z.restriction])}${z.reason ? ` · ${esc(z.reason)}` : ""}</div>
+    <div>${esc(t(`zone.${z.restriction}`))}${z.reason ? ` · ${esc(z.reason)}` : ""}</div>
     <div>${esc(z.lowerText)} – ${esc(z.upperText)}</div>
     <div>${when}</div>
-    ${z.message ? `<div class="zmsg">${esc(z.message)}</div>` : ""}
+    ${z.message[lang.value] ? `<div class="zmsg">${esc(z.message[lang.value])}</div>` : ""}
   </div>`;
 }
 
@@ -186,7 +208,7 @@ function renderZoneLayer(zones: Zone[]) {
         layer.bindPopup(zonePopup(f.properties as Zone), { maxWidth: 320 }),
     };
     zonesLayer = L.geoJSON(undefined, opts).addTo(map);
-    layersControl?.addOverlay(zonesLayer, "Drone zones");
+    layersControl?.addOverlay(zonesLayer, t("layer.zones"));
   }
   zonesLayer.clearLayers();
   for (const z of zones) {
@@ -410,11 +432,28 @@ onMounted(() => {
   );
 
   osm.addTo(map);
+  baseLayers = [
+    [osm, "layer.map"],
+    [satellite, "layer.satellite"],
+  ];
   layersControl = L.control
-    .layers({ Map: osm, Satellite: satellite }, undefined, {
-      position: "bottomright",
-    })
+    .layers(undefined, undefined, { position: "bottomright" })
     .addTo(map);
+  labelLayers();
+
+  // Language select at the bottom of the layers popup
+  const list = layersControl
+    .getContainer()!
+    .querySelector<HTMLElement>(".leaflet-control-layers-list")!;
+  L.DomUtil.create("div", "leaflet-control-layers-separator", list);
+  langRow = L.DomUtil.create("label", "lang-select", list);
+  langRow.innerHTML = `<span data-l="layer.language"></span><select>${LANGS.map(
+    ([value, name]) => `<option value="${value}">${name}</option>`,
+  ).join("")}</select>`;
+  const select = langRow.querySelector("select")!;
+  select.value = lang.value;
+  select.addEventListener("change", () => (lang.value = select.value as Lang));
+  applyLabels(langRow);
   if (props.zones.length) renderZoneLayer(props.zones);
   map.on("dragstart", () => {
     if (props.following) emit("unfollow"); // manual pan cancels follow
@@ -440,6 +479,18 @@ onMounted(() => {
 watch(() => props.detections, update);
 watch(() => props.zones, renderZoneLayer);
 
+// Leaflet content is plain DOM: relabel it when the language changes
+watch(lang, () => {
+  labelLayers();
+  if (langRow) applyLabels(langRow);
+  for (const t of tracks.values()) {
+    applyLabels(t.dronePopup.el);
+    applyLabels(t.pilotPopup.el);
+  }
+  if (zonesLayer) renderZoneLayer(props.zones); // rebinds zone popups
+  update(props.detections); // refreshes zone rows in drone popups
+});
+
 onBeforeUnmount(() => {
   tracks.clear();
   map?.remove();
@@ -459,6 +510,11 @@ onBeforeUnmount(() => {
 :deep(.rid-icon) {
   background: none;
   border: none;
+}
+:deep(.lang-select) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 :deep(.rid-popup) {
   font-size: 13px;

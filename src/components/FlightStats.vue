@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { colorFor } from "../colors";
+import { locale, t, type MsgKey } from "../i18n";
 import { copyText } from "../export";
 import { MAX_ALT_M } from "../config";
 import { fmtPos } from "../geo";
@@ -15,9 +16,9 @@ const pos = ([lat, lng]: [number, number]) => fmtPos(lat, lng);
 
 function positions() {
   const s = props.s;
-  const list: [string, string, [number, number]][] = [["start", "Start pos", s.start]];
-  if (!props.live) list.push(["end", "End pos", s.end]);
-  if (s.pilot) list.push(["pilot", "Pilot pos", s.pilot]);
+  const list: [string, MsgKey, [number, number]][] = [["start", "stats.startPos", s.start]];
+  if (!props.live) list.push(["end", "stats.endPos", s.end]);
+  if (s.pilot) list.push(["pilot", "stats.pilotPos", s.pilot]);
   return list;
 }
 
@@ -62,7 +63,7 @@ async function copy(key: string, text: string) {
 <template>
   <div v-if="chart" class="alt">
     <div class="alt-head">
-      <span>Altitude</span>
+      <span>{{ t("stats.altitude") }}</span>
       <span v-if="hover !== null">
         {{ fmtClock(s.altProfile[hover][0]) }} ·
         {{ Math.round(s.altProfile[hover][1]) }} m
@@ -73,7 +74,7 @@ async function copy(key: string, text: string) {
         :viewBox="`0 0 ${W} ${H}`"
         preserveAspectRatio="none"
         role="img"
-        :aria-label="`Altitude over time, max ${Math.round(s.maxAlt)} m`"
+        :aria-label="t('stats.altitudeAria', { m: Math.round(s.maxAlt) })"
       >
         <line class="base" x1="0" :y1="H" :x2="W" :y2="H" />
         <line class="limit" x1="0" :y1="chart.limitY" :x2="W" :y2="chart.limitY" />
@@ -102,43 +103,43 @@ async function copy(key: string, text: string) {
     </div>
   </div>
   <dl>
-    <dt>Max speed</dt>
+    <dt>{{ t("stats.maxSpeed") }}</dt>
     <dd>{{ (s.maxSpeed * 3.6).toFixed(0) }} km/h</dd>
-    <dt>Max alt</dt>
+    <dt>{{ t("stats.maxAlt") }}</dt>
     <dd>{{ Math.round(s.maxAlt) }} m</dd>
-    <dt>Above {{ MAX_ALT_M }} m</dt>
+    <dt>{{ t("stats.above", { m: MAX_ALT_M }) }}</dt>
     <dd :class="{ alert: s.aboveMaxMs }">{{ fmtDuration(s.aboveMaxMs) }}</dd>
-    <dt>Max from {{ s.fromTakeoff ? "takeoff" : "pilot" }}</dt>
+    <dt>{{ t(s.fromTakeoff ? "stats.fromTakeoff" : "stats.fromPilot") }}</dt>
     <dd>{{ Math.round(s.maxPilotDist) }} m</dd>
-    <dt>Distance</dt>
+    <dt>{{ t("stats.distance") }}</dt>
     <dd>{{ (s.distance / 1000).toFixed(2) }} km</dd>
-    <dt>Prohibited entries</dt>
+    <dt>{{ t("stats.prohibited") }}</dt>
     <dd :class="{ alert: s.zoneEntries }">{{ s.zoneEntries ?? "–" }}</dd>
     <template v-for="(z, i) in s.zones" :key="i">
       <dt class="sub">{{ z.name }}</dt>
       <dd>{{ fmtDuration(z.ms) }}</dd>
     </template>
-    <dt>Started</dt>
-    <dd :title="new Date(s.startTime).toLocaleString()">
+    <dt>{{ t("stats.started") }}</dt>
+    <dd :title="new Date(s.startTime).toLocaleString(locale())">
       {{ fmtClock(s.startTime) }}
     </dd>
     <template v-if="!live">
-      <dt>Ended</dt>
-      <dd :title="new Date(s.endTime).toLocaleString()">
+      <dt>{{ t("stats.ended") }}</dt>
+      <dd :title="new Date(s.endTime).toLocaleString(locale())">
         {{ fmtClock(s.endTime) }}
       </dd>
     </template>
-    <dt>Flight time</dt>
+    <dt>{{ t("stats.flightTime") }}</dt>
     <dd>{{ fmtDuration(s.endTime - s.startTime) }}</dd>
-    <dt>Longest signal gap</dt>
+    <dt>{{ t("stats.gap") }}</dt>
     <dd>{{ fmtDuration(s.maxGap) }}</dd>
     <template v-for="[key, label, ll] in positions()" :key="key">
-      <dt>{{ label }}</dt>
+      <dt>{{ t(label) }}</dt>
       <dd>
         <code>{{ pos(ll) }}</code>
         <button
           class="copy"
-          title="Copy coordinates"
+          :title="t('copy.coords')"
           @click="copy(s.id + key, pos(ll))"
         >
           {{ copied === s.id + key ? "✓" : "⧉" }}

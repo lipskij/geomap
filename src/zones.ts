@@ -1,6 +1,7 @@
 // Drone zones from the ANS UTM map API (GeoJSON with ED-269 style properties)
 
 import { bboxOf, inPolygon, type BBox, type Rings } from "./geo";
+import { t, type Lang } from "./i18n";
 
 export type Restriction = "PROHIBITED" | "REQ_AUTHORISATION" | "NO_RESTRICTION";
 
@@ -9,7 +10,7 @@ export interface Zone {
   name: string;
   restriction: Restriction;
   reason: string;
-  message: string;
+  message: Record<Lang, string>; // plain text per UI language
   lowerM: number; // m above ground
   upperM: number; // m above ground
   lowerText: string;
@@ -42,19 +43,6 @@ export interface ZoneCheck {
   aboveMax: boolean;
 }
 
-export const RESTRICTION_LABEL: Record<Restriction, string> = {
-  PROHIBITED: "Prohibited",
-  REQ_AUTHORISATION: "Authorisation required",
-  NO_RESTRICTION: "Information",
-};
-
-// Short form for list badges
-const SHORT_LABEL: Record<Restriction, string> = {
-  PROHIBITED: "Prohibited",
-  REQ_AUTHORISATION: "Authorisation",
-  NO_RESTRICTION: "Info",
-};
-
 const LEVEL: Record<Restriction, CheckLevel> = {
   PROHIBITED: "alert",
   REQ_AUTHORISATION: "warn",
@@ -84,9 +72,10 @@ function parseZone(f: any): Zone | null {
   const g = f.geometry;
   if (p.hidden || !g || g.type !== "Polygon") return null;
   const rings: Rings = g.coordinates;
-  const en = p.extendedProperties?.localizedMessages?.find(
-    (m: { language: string }) => m.language === "en-GB",
-  )?.message;
+  const localized = (language: string): string | undefined =>
+    p.extendedProperties?.localizedMessages?.find(
+      (m: { language: string }) => m.language === language,
+    )?.message;
   const applicability: Applicability[] = p.applicability ?? [
     { permanent: "YES" },
   ];
@@ -95,7 +84,10 @@ function parseZone(f: any): Zone | null {
     name: p.name ?? p.identifier,
     restriction: p.restriction,
     reason: p.reason ?? "",
-    message: toText(en ?? p.message ?? ""),
+    message: {
+      en: toText(localized("en-GB") ?? p.message ?? ""),
+      lt: toText(localized("lt-LT") ?? p.message ?? ""),
+    },
     lowerM: Number(p.lowerMeters ?? 0),
     upperM: Number(p.upperMeters ?? Infinity),
     lowerText: p.lower ?? `${p.lowerMeters} M AGL`,
@@ -164,14 +156,14 @@ export function checkPosition(
   const aboveMax = altM > maxAltM;
 
   let level: CheckLevel = "ok";
-  let label = "No zone";
+  let label = t("zone.none");
   if (hits.length) {
     level = LEVEL[hits[0].restriction];
-    label = `${SHORT_LABEL[hits[0].restriction]} · ${hits[0].name}`;
+    label = `${t(`zoneShort.${hits[0].restriction}`)} · ${hits[0].name}`;
   }
   if (aboveMax && RANK[level] < RANK.warn) {
     level = "warn";
-    label = `Above ${maxAltM} m`;
+    label = t("msg.above", { m: maxAltM });
   }
   return { level, label, zones: hits, aboveMax };
 }

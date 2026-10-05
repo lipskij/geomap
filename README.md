@@ -16,6 +16,7 @@ Live map of object positions from Remote ID detections, built with Vue 3, TypeSc
 - Track history and the alert log are saved in the browser and survive page reloads
 - Fades objects after 10 s without updates, removes them after 60 s
 - Map, satellite map layers
+- English and Lithuanian interface; switch the language at the bottom of the layers control (bottom right). The choice is remembered; the default follows the browser language
 - Replay recorded tracks (CSV, GPX, KML) with play/pause, seek and speed control
 
 ## Flight stats
@@ -116,6 +117,7 @@ Zones are not loaded in production builds (GitHub Pages).
 src/
   api.ts                          # fetchDetections(): mock or real API
   types.ts                        # Detection types
+  i18n.ts                         # English / Lithuanian texts, language switch
   config.ts                       # polling, fade and removal timings
   colors.ts                       # per-object colors
   export.ts                       # GPX / KML / CSV export

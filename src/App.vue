@@ -22,6 +22,7 @@ import {
 } from "./zones";
 import { exportTrack, type ExportFormat } from "./export";
 import { MAX_ALT_M, POLL_MS, STALE_SECONDS, ZONES_ENABLED } from "./config";
+import { t } from "./i18n";
 
 const { detections: live, error } = useDetections(POLL_MS);
 const replay = useReplay();
@@ -128,13 +129,9 @@ watch(checks, (all) => {
     const prohibited = c.zones.find((z) => z.restriction === "PROHIBITED");
     const key = prohibited ? `p:${prohibited.id}` : c.aboveMax ? "above" : "";
     if (key && key !== lastAlert.get(id)) {
-      push(
-        id,
-        prohibited
-          ? `Entered prohibited zone ${prohibited.name}`
-          : `Above ${MAX_ALT_M} m`,
-        "alert",
-      );
+      if (prohibited)
+        push(id, "msg.prohibited", { name: prohibited.name }, "alert");
+      else push(id, "msg.above", { m: MAX_ALT_M }, "alert");
     }
     lastAlert.set(id, key);
   }
@@ -185,9 +182,9 @@ function onExport(id: string, format: ExportFormat) {
 </script>
 
 <template>
-  <p v-if="error" class="error">Failed to load detections: {{ error }}</p>
+  <p v-if="error" class="error">{{ t("err.detections", { e: error }) }}</p>
   <p v-else-if="zonesError" class="error">
-    Failed to load drone zones: {{ zonesError }}
+    {{ t("err.zones", { e: zonesError }) }}
   </p>
   <!-- right-inset: drone panel is 320 px wide + 10 px margin, plus a 10 px gap -->
   <MapView

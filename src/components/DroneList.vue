@@ -6,6 +6,7 @@ import type { Alert } from "../composables/useToasts";
 import FlightStats from "./FlightStats.vue";
 import type { ZoneCheck } from "../zones";
 import { colorFor } from "../colors";
+import { locale, t } from "../i18n";
 import { FADE_SECONDS } from "../config";
 import {
   fmtClock,
@@ -71,11 +72,11 @@ function doExport(id: string, f: ExportFormat) {
 <template>
   <section class="panel">
     <button class="header" :aria-expanded="open" @click="open = !open">
-      <span>Drones ({{ drones.length }})</span>
+      <span>{{ t("list.drones", { n: drones.length }) }}</span>
     </button>
 
     <ul v-if="open" class="list">
-      <li v-if="!sorted.length" class="empty">No drones detected</li>
+      <li v-if="!sorted.length" class="empty">{{ t("list.empty") }}</li>
       <li
         v-for="d in sorted"
         :key="d.basic_id"
@@ -114,7 +115,7 @@ function doExport(id: string, f: ExportFormat) {
           <button
             class="action"
             :class="{ active: following === d.basic_id }"
-            :title="following === d.basic_id ? 'Stop following' : 'Follow'"
+            :title="t(following === d.basic_id ? 'list.unfollow' : 'list.follow')"
             @click="toggleFollow(d.basic_id)"
           >
             ◎
@@ -123,14 +124,14 @@ function doExport(id: string, f: ExportFormat) {
             v-if="!d.basic_id.startsWith(REPLAY_PREFIX)"
             class="action"
             :class="{ active: exportMenu === d.basic_id }"
-            title="Export track"
+            :title="t('list.export')"
             @click="exportMenu = exportMenu === d.basic_id ? null : d.basic_id"
           >
             ⤓
           </button>
         </div>
         <div v-if="exportMenu === d.basic_id" class="export">
-          Export track:
+          {{ t("list.exportTo") }}
           <button
             v-for="f in formats"
             :key="f"
@@ -158,14 +159,18 @@ function doExport(id: string, f: ExportFormat) {
       :aria-expanded="alertsOpen"
       @click="alertsOpen = !alertsOpen"
     >
-      <span>Alerts ({{ alerts.length }})</span>
+      <span>{{ t("alerts.title", { n: alerts.length }) }}</span>
     </button>
     <div v-if="alertsOpen" class="alerts">
       <div v-if="alerts.length" class="tools">
-        <button class="fmt" @click="exportAlerts(alerts)">Export CSV</button>
-        <button class="fmt" @click="emit('clearAlerts')">Clear</button>
+        <button class="fmt" @click="exportAlerts(alerts)">
+          {{ t("alerts.export") }}
+        </button>
+        <button class="fmt" @click="emit('clearAlerts')">
+          {{ t("alerts.clear") }}
+        </button>
       </div>
-      <p v-else class="empty">No alerts</p>
+      <p v-else class="empty">{{ t("alerts.empty") }}</p>
       <button
         v-for="a in alerts"
         :key="a.key"
@@ -174,14 +179,14 @@ function doExport(id: string, f: ExportFormat) {
         :disabled="!present.has(a.droneId)"
         :title="
           present.has(a.droneId)
-            ? new Date(a.time).toLocaleString()
-            : 'Drone is no longer on the map'
+            ? new Date(a.time).toLocaleString(locale())
+            : t('alerts.gone')
         "
         @click="emit('select', a.droneId)"
       >
         <span class="swatch" :style="{ background: colorFor(a.droneId) }" />
         <span class="main">
-          <span class="text">{{ a.text }}</span>
+          <span class="text">{{ t(a.msg, a.params) }}</span>
           <span class="id">{{ a.droneId }}</span>
         </span>
         <span class="age">{{ fmtClock(a.time) }}</span>

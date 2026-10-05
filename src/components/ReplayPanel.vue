@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { fmtDuration as fmt } from "../composables/useReplay";
+import { plural, t } from "../i18n";
 
 defineProps<{
   fileName: string;
@@ -40,26 +41,24 @@ function onFile(e: Event) {
     />
 
     <button v-if="!fileName" class="open" @click="input?.click()">
-      Import and replay a track (CSV, GPX, KML)
+      {{ t("replay.open") }}
     </button>
 
     <template v-else>
       <div class="head">
         <span class="name" :title="fileName">{{ fileName }}</span>
-        <span class="count"
-          >{{ droneCount }} {{ droneCount === 1 ? "drone" : "drones" }}</span
-        >
-        <button class="icon" title="Load another file" @click="input?.click()">
+        <span class="count">{{ plural("replay.drones", droneCount) }}</span>
+        <button class="icon" :title="t('replay.loadAnother')" @click="input?.click()">
           ⤒
         </button>
-        <button class="icon" title="Close replay" @click="emit('close')">
+        <button class="icon" :title="t('replay.close')" @click="emit('close')">
           ×
         </button>
       </div>
       <div class="controls">
         <button
           class="play"
-          :title="playing ? 'Pause' : 'Play'"
+          :title="t(playing ? 'replay.pause' : 'replay.play')"
           @click="emit('toggle')"
         >
           {{ playing ? "❚❚" : "⏵" }}
@@ -77,7 +76,7 @@ function onFile(e: Event) {
         />
         <select
           class="speed"
-          title="Playback speed"
+          :title="t('replay.speed')"
           :value="speed"
           @change="
             emit('speed', Number(($event.target as HTMLSelectElement).value))

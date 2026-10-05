@@ -8,6 +8,7 @@ import {
 import { checkPosition, isZoneActive, type Zone } from "../zones";
 import { MAX_ALT_M } from "../config";
 import { validPos } from "../geo";
+import { locale } from "../i18n";
 
 const TICK_MS = 250;
 export const REPLAY_PREFIX = "R-"; // replayed IDs are prefixed so they never collide with live ones
@@ -41,7 +42,7 @@ function indexAt(pts: ReplayPoint[], time: number): number {
 
 // Local 24 h clock time, e.g. "14:18:25"
 export const fmtClock = (t: number) =>
-  new Date(t).toLocaleTimeString([], { hour12: false });
+  new Date(t).toLocaleTimeString(locale(), { hour12: false });
 
 // "mm:ss", or "h:mm:ss" from one hour
 export function fmtDuration(ms: number): string {

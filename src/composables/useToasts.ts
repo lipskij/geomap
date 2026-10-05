@@ -1,13 +1,15 @@
 import { ref, watch, type Ref } from "vue";
 import type { Detection } from "../types";
 import { TOAST_MS } from "../config";
+import type { MsgKey, Params } from "../i18n";
 
 export type ToastKind = "info" | "alert";
 
 export interface Toast {
   key: number;
   droneId: string;
-  text: string;
+  msg: MsgKey; // translated when shown, so the log follows the language setting
+  params?: Params;
   kind: ToastKind;
 }
 
@@ -21,7 +23,8 @@ const ALERTS_KEY = "geomap.alerts";
 
 function loadAlerts(): Alert[] {
   try {
-    return JSON.parse(localStorage.getItem(ALERTS_KEY) ?? "[]");
+    const saved: Alert[] = JSON.parse(localStorage.getItem(ALERTS_KEY) ?? "[]");
+    return saved.filter((a) => a.msg); // drop entries saved before translation
   } catch {
     return [];
   }
@@ -47,9 +50,14 @@ export function useToasts(drones: Ref<Detection[]>) {
     toasts.value = toasts.value.filter((t) => t.key !== key);
   }
 
-  function push(droneId: string, text: string, kind: ToastKind = "info") {
+  function push(
+    droneId: string,
+    msg: MsgKey,
+    params?: Params,
+    kind: ToastKind = "info",
+  ) {
     const key = nextKey++;
-    const toast = { key, droneId, text, kind };
+    const toast = { key, droneId, msg, params, kind };
     toasts.value = [...toasts.value, toast].slice(-MAX_TOASTS);
     alerts.value = [{ ...toast, time: Date.now() }, ...alerts.value].slice(
       0,
@@ -63,7 +71,7 @@ export function useToasts(drones: Ref<Detection[]>) {
     for (const d of list) {
       if (seen.has(d.basic_id)) continue;
       seen.add(d.basic_id);
-      push(d.basic_id, "New drone detected");
+      push(d.basic_id, "msg.newDrone");
     }
   });
 

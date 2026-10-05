@@ -1,5 +1,6 @@
 import type { TrackPoint } from "./composables/useTrackHistory";
 import type { Alert } from "./composables/useToasts";
+import { t } from "./i18n";
 
 export type ExportFormat = "gpx" | "kml" | "csv";
 
@@ -109,7 +110,7 @@ function download(name: string, body: string, type: string) {
 export function exportAlerts(alerts: Alert[]): void {
   const q = (v: string) => `"${v.replace(/"/g, '""')}"`;
   const rows = alerts.map((a) =>
-    [iso(a.time / 1000), a.kind, q(a.droneId), q(a.text)].join(","),
+    [iso(a.time / 1000), a.kind, q(a.droneId), q(t(a.msg, a.params))].join(","),
   );
   download(
     `alerts_${fileTime(Date.now() / 1000)}.csv`,

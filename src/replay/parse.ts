@@ -1,6 +1,7 @@
 // Parses recorded tracks (CSV / GPX / KML) into time-ordered points for replay
 
 import { validPos } from "../geo";
+import { t } from "../i18n";
 
 export interface ReplayPoint {
   t: number; // ms
@@ -119,7 +120,7 @@ function parseCsv(text: string, fallbackId: string): ReplayTrack[] {
     Object.keys(COLUMNS).map((k) => [k, col(k as keyof typeof COLUMNS)]),
   );
   if (c.lat < 0 || c.lng < 0)
-    throw new Error("CSV needs latitude and longitude columns");
+    throw new Error(t("replay.err.csvColumns"));
   const get = (r: string[], i: number) => (i >= 0 ? r[i] : undefined);
 
   // Several drones per file are grouped by basic_id (or MAC)
@@ -235,12 +236,12 @@ export async function parseTrackFile(file: File): Promise<ReplayTrack[]> {
   else if (ext === "gpx" || ext === "kml") {
     const doc = new DOMParser().parseFromString(text, "application/xml");
     if (doc.getElementsByTagName("parsererror").length)
-      throw new Error("Invalid XML");
+      throw new Error(t("replay.err.xml"));
     tracks =
       ext === "gpx" ? parseGpx(doc, fallbackId) : parseKml(doc, fallbackId);
-  } else throw new Error("Unsupported file type (use CSV, GPX or KML)");
+  } else throw new Error(t("replay.err.type"));
 
   if (!tracks.length)
-    throw new Error("No track with at least 2 positions found");
+    throw new Error(t("replay.err.empty"));
   return tracks;
 }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Toast } from "../composables/useToasts";
 import { colorFor } from "../colors";
+import { t } from "../i18n";
 
 defineProps<{ toasts: Toast[] }>();
 const emit = defineEmits<{
@@ -12,21 +13,21 @@ const emit = defineEmits<{
 <template>
   <TransitionGroup tag="div" name="toast" class="stack">
     <div
-      v-for="t in toasts"
-      :key="t.key"
+      v-for="toast in toasts"
+      :key="toast.key"
       class="toast"
-      :class="t.kind"
-      @click="emit('select', t.droneId)"
+      :class="toast.kind"
+      @click="emit('select', toast.droneId)"
     >
-      <span class="swatch" :style="{ background: colorFor(t.droneId) }" />
+      <span class="swatch" :style="{ background: colorFor(toast.droneId) }" />
       <span class="body">
-        <span class="title">{{ t.text }}</span>
-        <span class="id">{{ t.droneId }}</span>
+        <span class="title">{{ t(toast.msg, toast.params) }}</span>
+        <span class="id">{{ toast.droneId }}</span>
       </span>
       <button
         class="close"
-        title="Dismiss"
-        @click.stop="emit('dismiss', t.key)"
+        :title="t('toast.dismiss')"
+        @click.stop="emit('dismiss', toast.key)"
       >
         ×
       </button>
