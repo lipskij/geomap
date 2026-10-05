@@ -4,12 +4,22 @@ import MapView from "./components/MapView.vue";
 import DroneList from "./components/DroneList.vue";
 import ToastStack from "./components/ToastStack.vue";
 import ReplayPanel from "./components/ReplayPanel.vue";
-import { REPLAY_PREFIX, trackStats, useReplay } from "./composables/useReplay";
+import {
+  REPLAY_PREFIX,
+  trackStats,
+  useReplay,
+  type ZoneHitCache,
+} from "./composables/useReplay";
 import { useDetections } from "./composables/useDetections";
 import { useTrackHistory } from "./composables/useTrackHistory";
 import { useToasts } from "./composables/useToasts";
 import { useZones } from "./composables/useZones";
-import { checkPosition, isZoneActive, type Zone, type ZoneCheck } from "./zones";
+import {
+  checkPosition,
+  isZoneActive,
+  type Zone,
+  type ZoneCheck,
+} from "./zones";
 import { exportTrack, type ExportFormat } from "./export";
 import { MAX_ALT_M, POLL_MS, STALE_SECONDS, ZONES_ENABLED } from "./config";
 
@@ -148,13 +158,25 @@ function setFollow(id: string | null) {
   if (id) focusDrone(id);
 }
 
+// Live zone checks per drone, reused across polls; reset when the set of zones changes
+// (the 5-min reload usually returns the same zones)
+const zoneHits = new Map<string, ZoneHitCache>();
+let zoneHitsKey = "";
+
 // Replayed drone: whole-file stats. Live drone: from its recorded history (seconds → ms).
-// ponytail: live is a full recompute per poll for the opened drone; go incremental if long flights lag
+// live re-walks the whole history per poll (cheap without the zone checks); go incremental if it shows up
 function statsFor(id: string) {
   if (replay.fileName.value)
     return replayStats.value.find((s) => s.id === id) ?? null;
   const pts = getTrack(id).map((p) => ({ ...p, t: p.t * 1000 }));
-  return pts.length ? trackStats(id, pts, zones.value) : null;
+  if (!pts.length) return null;
+  const key = zones.value.map((z) => z.id).join("|");
+  if (key !== zoneHitsKey) {
+    zoneHits.clear();
+    zoneHitsKey = key;
+  }
+  if (!zoneHits.has(id)) zoneHits.set(id, new Map());
+  return trackStats(id, pts, zones.value, zoneHits.get(id));
 }
 
 function onExport(id: string, format: ExportFormat) {

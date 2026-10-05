@@ -88,13 +88,21 @@ function altProfile(pts: ReplayPoint[]): Tuple[] {
 
 // Whole-track summary (replayed or live drone; pts must not be empty). Time between
 // two points is attributed to the state at the earlier one (zones inside, above the limit).
+// Prohibited zones a point is inside; keyed by point time. A recorded point's result never
+// changes, so callers can pass a cache (cleared when the zone list changes) to only check new points.
+export type ZoneHitCache = Map<number, Zone[]>;
+const NO_HITS: Zone[] = [];
+
 export function trackStats(
   id: string,
   pts: ReplayPoint[],
   zones: Zone[],
+  hitCache: ZoneHitCache = new Map(),
 ): TrackStats {
   const first = pts[0];
   const last = pts[pts.length - 1];
+  // Only prohibited zones count here; skipping the rest also skips the huge country-wide outlines
+  const prohibited = zones.filter((z) => z.restriction === "PROHIBITED");
   const pilotPt = pts.find((p) => validPos(p.pilotLat, p.pilotLng));
   let maxSpeed = 0;
   let maxAlt = -Infinity;
@@ -125,9 +133,14 @@ export function trackStats(
       : first;
     if (origin) maxPilotDist = Math.max(maxPilotDist, distanceM(origin, p));
 
-    const now = checkPosition(p.lat, p.lng, p.alt, zones, MAX_ALT_M).zones.filter(
-      (z) => z.restriction === "PROHIBITED" && isZoneActive(z, new Date(p.t)),
-    );
+    let now = hitCache.get(p.t);
+    if (!now) {
+      const hits = checkPosition(p.lat, p.lng, p.alt, prohibited, MAX_ALT_M).zones.filter(
+        (z) => isZoneActive(z, new Date(p.t)),
+      );
+      now = hits.length ? hits : NO_HITS;
+      hitCache.set(p.t, now);
+    }
     for (const z of now) {
       if (inside.some((o) => o.id === z.id)) continue;
       zoneEntries++;

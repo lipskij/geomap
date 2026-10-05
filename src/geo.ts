@@ -26,9 +26,12 @@ export function bboxOf(rings: Rings): BBox {
 
 function inRing(lng: number, lat: number, ring: number[][]): boolean {
   let inside = false;
+  // Hot loop (zones have thousands of vertices): index access, no destructuring
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i];
-    const [xj, yj] = ring[j];
+    const xi = ring[i][0];
+    const yi = ring[i][1];
+    const xj = ring[j][0];
+    const yj = ring[j][1];
     if (
       yi > lat !== yj > lat &&
       lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi
