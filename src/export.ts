@@ -45,20 +45,11 @@ function toKml(id: string, pts: TrackPoint[]): string {
 
 function toCsv(pts: TrackPoint[]): string {
   const rows = pts.map((p) =>
-    [
-      iso(p.t),
-      p.lat,
-      p.lng,
-      p.alt,
-      (p.speed * 3.6).toFixed(1),
-      p.heading ?? "",
-      p.rssi,
-    ].join(","),
+    [iso(p.t), p.lat, p.lng, p.alt, (p.speed * 3.6).toFixed(1), p.rssi].join(
+      ",",
+    ),
   );
-  return (
-    ["time,lat,lng,alt_m,speed_kmh,heading_deg,rssi_dbm", ...rows].join("\n") +
-    "\n"
-  );
+  return ["time,lat,lng,alt_m,speed_kmh,rssi_dbm", ...rows].join("\n") + "\n";
 }
 
 const MIME: Record<ExportFormat, string> = {

@@ -59,10 +59,6 @@ export function getMockDetections(): Detections {
     if (active) lastSeen[d.basic_id] = now;
     const tt = active ? t : d.stopAfter!;
     const a = d.phase + d.speed * tt;
-    // Direction of travel along the circle (north = cos a, east = -sin a, scaled by rotation sign)
-    const heading =
-      (Math.atan2(-Math.sin(a) * d.speed, Math.cos(a) * d.speed) * 180) /
-      Math.PI;
     const det: Detection = {
       basic_id: d.basic_id,
       rssi: -50 - Math.round(Math.random() * 30),
@@ -72,12 +68,12 @@ export function getMockDetections(): Detections {
         (d.alt?.[0] ?? 80) + (d.alt?.[1] ?? 20) * Math.sin(a * 2),
       ),
       drone_speed: active ? d.radius * M_PER_DEG_LAT * Math.abs(d.speed) : 0,
-      drone_heading: Math.round((heading + 360) % 360),
       pilot_lat: d.pilot[0],
       pilot_long: d.pilot[1],
       last_update: lastSeen[d.basic_id],
     };
     out[d.basic_id] = det;
   }
+
   return out;
 }

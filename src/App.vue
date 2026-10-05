@@ -1,18 +1,16 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import MapView from "./components/MapView.vue";
 import DroneList from "./components/DroneList.vue";
 import ToastStack from "./components/ToastStack.vue";
+import ReplayPanel from "./components/ReplayPanel.vue";
+import { useReplay } from "./composables/useReplay";
 import { useDetections } from "./composables/useDetections";
 import { useTrackHistory } from "./composables/useTrackHistory";
 import { useToasts } from "./composables/useToasts";
 import { useZones } from "./composables/useZones";
-import {
-  checkPosition,
-  isZoneActive,
-  type Zone,
-  type ZoneCheck,
-} from "./zones";
+import { useActiveSubset } from "./composables/useActiveSubset";
+import { checkPosition, isZoneActive, type ZoneCheck } from "./zones";
 import { exportTrack, type ExportFormat } from "./export";
 import {
   FADE_SECONDS,
@@ -22,8 +20,22 @@ import {
   ZONES_ENABLED,
 } from "./config";
 
-const { detections, error } = useDetections(POLL_MS);
-const { getTrack } = useTrackHistory(detections);
+const { detections: live, error } = useDetections(POLL_MS);
+const replay = useReplay();
+
+// While a replay is loaded, show only the replayed drones; otherwise live (or mock) ones
+const detections = computed(() =>
+  replay.fileName.value ? replay.detections.value : live.value,
+);
+// History keeps recording live drones even while a replay is shown
+const { getTrack } = useTrackHistory(live);
+
+// Replayed paths follow the recorded points up to the current time (also after seeking
+// and at high speed), instead of joining sampled positions with straight lines
+watch(replay.detections, () => {
+  for (const [id, pts] of Object.entries(replay.pathsAtPosition()))
+    mapView.value?.setPath(id, pts);
+});
 
 const mapView = ref<InstanceType<typeof MapView>>();
 const selected = ref<string | null>(null);
@@ -39,17 +51,14 @@ const activeDrones = computed(() => {
 const { toasts, dismiss, push } = useToasts(activeDrones);
 const { zones, error: zonesError } = useZones();
 
-// Zones active right now (temporary zones / schedules). Re-checked every poll, but the
-// array is only replaced when the set changes, so the map doesn't redraw zones every second.
-const activeZones = shallowRef<Zone[]>([]);
-let lastZones: Zone[] | null = null;
-watch([zones, detections], () => {
-  const next = zones.value.filter((z) => isZoneActive(z));
-  const ids = (list: Zone[]) => list.map((z) => z.id).join("|");
-  if (zones.value !== lastZones || ids(next) !== ids(activeZones.value))
-    activeZones.value = next;
-  lastZones = zones.value;
-});
+// Zones active right now. Re-checked every poll, but only replaced when the
+// set changes, so the map doesn't redraw these layers every second.
+const activeZones = useActiveSubset(
+  zones,
+  detections,
+  (z) => isZoneActive(z),
+  (z) => z.id,
+);
 
 // Per-drone zone / altitude status (only when zone data is available)
 const checks = computed<Record<string, ZoneCheck>>(() => {
@@ -134,6 +143,20 @@ function onExport(id: string, format: ExportFormat) {
     @export="onExport"
   />
   <ToastStack :toasts="toasts" @select="focusDrone" @dismiss="dismiss" />
+  <ReplayPanel
+    :file-name="replay.fileName.value"
+    :drone-count="replay.tracks.value.length"
+    :playing="replay.playing.value"
+    :speed="replay.speed.value"
+    :position="replay.position.value"
+    :duration="replay.duration.value"
+    :error="replay.error.value"
+    @load="replay.load"
+    @toggle="replay.toggle"
+    @seek="replay.seek"
+    @speed="(v) => (replay.speed.value = v)"
+    @close="replay.close"
+  />
 </template>
 
 <style>

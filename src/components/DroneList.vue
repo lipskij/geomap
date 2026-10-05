@@ -5,6 +5,7 @@ import type { ExportFormat } from "../export";
 import type { ZoneCheck } from "../zones";
 import { colorFor } from "../colors";
 import { FADE_SECONDS } from "../config";
+import { REPLAY_PREFIX } from "../composables/useReplay";
 
 const props = defineProps<{
   drones: Detection[];
@@ -92,6 +93,7 @@ function doExport(id: string, f: ExportFormat) {
             ◎
           </button>
           <button
+            v-if="!d.basic_id.startsWith(REPLAY_PREFIX)"
             class="action"
             :class="{ active: exportMenu === d.basic_id }"
             title="Export track"

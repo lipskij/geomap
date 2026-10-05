@@ -1,5 +1,7 @@
 // Drone zones from the ANS UTM map API (GeoJSON with ED-269 style properties)
 
+import { bboxOf, inPolygon, type BBox, type Rings } from "./geo";
+
 export type Restriction = "PROHIBITED" | "REQ_AUTHORISATION" | "NO_RESTRICTION";
 
 export interface Zone {
@@ -14,8 +16,8 @@ export interface Zone {
   upperText: string;
   temporary: boolean;
   applicability: Applicability[];
-  rings: number[][][]; // [outer, ...holes], [lng, lat]
-  bbox: [number, number, number, number]; // minLng, minLat, maxLng, maxLat
+  rings: Rings;
+  bbox: BBox;
 }
 
 interface Schedule {
@@ -58,7 +60,12 @@ const LEVEL: Record<Restriction, CheckLevel> = {
   REQ_AUTHORISATION: "warn",
   NO_RESTRICTION: "info",
 };
-const RANK: Record<CheckLevel, number> = { ok: 0, info: 1, warn: 2, alert: 3 };
+const RANK: Record<CheckLevel, number> = {
+  ok: 0,
+  info: 1,
+  warn: 2,
+  alert: 3,
+};
 
 // ---- Parsing ----
 
@@ -76,17 +83,7 @@ function parseZone(f: any): Zone | null {
   const p = f.properties ?? {};
   const g = f.geometry;
   if (p.hidden || !g || g.type !== "Polygon") return null;
-  const rings: number[][][] = g.coordinates;
-  let minLng = Infinity,
-    minLat = Infinity,
-    maxLng = -Infinity,
-    maxLat = -Infinity;
-  for (const [lng, lat] of rings[0]) {
-    minLng = Math.min(minLng, lng);
-    maxLng = Math.max(maxLng, lng);
-    minLat = Math.min(minLat, lat);
-    maxLat = Math.max(maxLat, lat);
-  }
+  const rings: Rings = g.coordinates;
   const en = p.extendedProperties?.localizedMessages?.find(
     (m: { language: string }) => m.language === "en-GB",
   )?.message;
@@ -106,7 +103,7 @@ function parseZone(f: any): Zone | null {
     temporary: applicability.every((a) => a.permanent !== "YES"),
     applicability,
     rings,
-    bbox: [minLng, minLat, maxLng, maxLat],
+    bbox: bboxOf(rings),
   };
 }
 
@@ -146,29 +143,6 @@ export function isZoneActive(z: Zone, now = new Date()): boolean {
   });
 }
 
-// ---- Geometry ----
-
-function inRing(lng: number, lat: number, ring: number[][]): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i];
-    const [xj, yj] = ring[j];
-    if (
-      yi > lat !== yj > lat &&
-      lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi
-    )
-      inside = !inside;
-  }
-  return inside;
-}
-
-function inZone(lng: number, lat: number, z: Zone): boolean {
-  const [a, b, c, d] = z.bbox;
-  if (lng < a || lng > c || lat < b || lat > d) return false;
-  if (!inRing(lng, lat, z.rings[0])) return false;
-  return !z.rings.slice(1).some((hole) => inRing(lng, lat, hole));
-}
-
 // ---- Check ----
 
 // altM is treated as height above ground (zone limits are AGL)
@@ -180,7 +154,12 @@ export function checkPosition(
   maxAltM: number,
 ): ZoneCheck {
   const hits = zones
-    .filter((z) => inZone(lng, lat, z) && altM >= z.lowerM && altM <= z.upperM)
+    .filter(
+      (z) =>
+        inPolygon(lng, lat, z.rings, z.bbox) &&
+        altM >= z.lowerM &&
+        altM <= z.upperM,
+    )
     .sort((a, b) => RANK[LEVEL[b.restriction]] - RANK[LEVEL[a.restriction]]);
   const aboveMax = altM > maxAltM;
 

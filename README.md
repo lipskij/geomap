@@ -8,14 +8,13 @@ Live map of object positions from Remote ID detections, built with Vue 3, TypeSc
 
 - Polls detections every second and moves existing markers in place (no redraw flicker)
 - Object and pilot markers with flight paths (solid for objects, dashed for pilot)
-- Heading arrow when the source provides direction
 - Distinct color per object
 - Expandable object list: click to focus, follow mode, per-object track export (GPX, KML, CSV)
-- Popup with ID, RSSI, altitude, speed and heading; copyable ID and coordinates
+- Popup with ID, RSSI, altitude and speed; copyable ID and coordinates
 - New object alerts
 - Fades objects after 10 s without updates, removes them after 60 s
-- Map, satellite layers
-- Object zones layer with zone and altitude checks (local development only, see below)
+- Map, satellite map layers
+- Replay recorded tracks (CSV, GPX, KML) with play/pause, seek and speed control
 
 ## Requirements
 
@@ -41,7 +40,6 @@ npm run dev
     "d_long": 25.2864,
     "d_altitude": 84,
     "d_speed": 13.4,
-    "d_heading": 305,
     "pilot_lat": 54.6872,
     "pilot_long": 25.2797,
     "last_update": 1790000000
@@ -49,12 +47,11 @@ npm run dev
 }
 ```
 
-| Field         | Unit                              |
-| ------------- | --------------------------------- |
-| `d_altitude`  | m                                 |
-| `d_speed`     | m/s, horizontal                   |
-| `d_heading`   | degrees from true north, optional |
-| `last_update` | Unix time, seconds                |
+| Field         | Unit               |
+| ------------- | ------------------ |
+| `d_altitude`  | m                  |
+| `d_speed`     | m/s, horizontal    |
+| `last_update` | Unix time, seconds |
 
 ## Real data
 
@@ -64,11 +61,11 @@ Mock data is on by default. To read from a real `/api/detections` on the same or
 VITE_USE_MOCK=false npm run build
 ```
 
-## Object zones (local only)
+## Drone zones (local only)
 
 When running `npm run dev`, the app loads Lithuanian UAS geographical zones from the ANS UTM map (`utm.ans.lt`) through the Vite dev server and:
 
-- draws them as a "Object zones" layer (red: prohibited, amber: authorisation required, grey: information)
+- draws them as a "Drone zones" layer (red: prohibited, amber: authorisation required, grey: information)
 - checks each object: inside a zone horizontally and between the zone's lower and upper limit
 - flags objects above 120 m
 - alerts when an object enters a prohibited zone or goes above 120 m
@@ -90,11 +87,14 @@ src/
   composables/useDetections.ts    # 1 s polling
   composables/useTrackHistory.ts  # track history for export
   composables/useToasts.ts        # new object and zone alerts
-  composables/useZones.ts         # loads object zones (dev only)
+  composables/useReplay.ts        # replay playback
+  replay/parse.ts                 # CSV / GPX / KML track parsing
+  geo.ts                          # point-in-polygon helpers
   zones.ts                        # zone parsing, active times, zone/altitude check
   components/MapView.vue          # Leaflet map, markers, paths
-  components/ObjectList.vue        # object list
+  components/DroneList.vue        # object list
   components/ToastStack.vue       # alert messages
+  components/ReplayPanel.vue      # replay controls
   App.vue
 ```
 
