@@ -7,6 +7,7 @@ import {
 } from "../replay/parse";
 import { checkPosition, isZoneActive, type Zone } from "../zones";
 import { MAX_ALT_M } from "../config";
+import { validPos } from "../geo";
 
 const TICK_MS = 250;
 export const REPLAY_PREFIX = "R-"; // replayed IDs are prefixed so they never collide with live ones
@@ -47,7 +48,6 @@ export function fmtDuration(ms: number): string {
   return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-type LatLng = { lat: number; lng: number };
 type Tuple = [number, number]; // lat, lng
 
 export interface TrackStats {
@@ -68,9 +68,6 @@ export interface TrackStats {
   end: Tuple;
   pilot: Tuple | null; // first known pilot position
 }
-
-const validPos = (lat?: number, lng?: number) =>
-  Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
 
 // Whole-track summary per replayed drone. Time between two points is attributed
 // to the state at the earlier one (zones inside, above the limit).
@@ -102,7 +99,7 @@ export function trackStats(tracks: ReplayTrack[], zones: Zone[]): TrackStats[] {
       } else if (p.speed !== undefined) maxSpeed = p.speed;
       maxAlt = Math.max(maxAlt, p.alt);
 
-      const origin: LatLng | undefined = pilotPt
+      const origin = pilotPt
         ? validPos(p.pilotLat, p.pilotLng)
           ? { lat: p.pilotLat!, lng: p.pilotLng! }
           : undefined

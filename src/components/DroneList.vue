@@ -94,19 +94,6 @@ function doExport(id: string, f: ExportFormat) {
   <section class="panel">
     <button class="header" :aria-expanded="open" @click="open = !open">
       <span>Drones ({{ drones.length }})</span>
-      <svg
-        class="chevron"
-        :class="{ open }"
-        viewBox="0 0 10 10"
-        aria-hidden="true"
-      >
-        <path
-          d="M2 3.5 5 6.5 8 3.5"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-        />
-      </svg>
     </button>
 
     <ul v-if="open" class="list">
@@ -181,19 +168,6 @@ function doExport(id: string, f: ExportFormat) {
         @click="statsOpen = !statsOpen"
       >
         <span>Flight stats</span>
-        <svg
-          class="chevron"
-          :class="{ open: statsOpen }"
-          viewBox="0 0 10 10"
-          aria-hidden="true"
-        >
-          <path
-            d="M2 3.5 5 6.5 8 3.5"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-          />
-        </svg>
       </button>
       <div v-if="statsOpen" class="stats">
         <label v-if="stats.length > 1" class="sort">
@@ -301,13 +275,18 @@ button {
 .header:hover {
   background: #f3f4f6;
 }
-.chevron {
+/* Chevron: flattens and flips when the section opens */
+.header::after {
+  content: "";
   width: 1.25em;
   height: 1.25em;
+  background: currentColor;
+  mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='black' stroke-width='1.5'/></svg>")
+    center / contain no-repeat;
   transition: transform 0.15s;
   transform: scaleY(-1);
 }
-.chevron.open {
+.header[aria-expanded="true"]::after {
   transform: scaleY(1);
 }
 .list {

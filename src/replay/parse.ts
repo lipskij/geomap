@@ -1,5 +1,7 @@
 // Parses recorded tracks (CSV / GPX / KML) into time-ordered points for replay
 
+import { validPos } from "../geo";
+
 export interface ReplayPoint {
   t: number; // ms
   lat: number;
@@ -41,12 +43,7 @@ function finish(
   const base = pts.find((p) => p.t !== undefined)?.t ?? Date.now();
   const timed = pts
     .map((p, i) => ({ ...p, t: p.t ?? base + i * 1000 }))
-    .filter(
-      (p) =>
-        Number.isFinite(p.lat) &&
-        Number.isFinite(p.lng) &&
-        !(p.lat === 0 && p.lng === 0),
-    )
+    .filter((p) => validPos(p.lat, p.lng))
     .sort((a, b) => a.t - b.t)
     .filter((p, i, arr) => i === 0 || p.t > arr[i - 1].t);
   return timed.length >= 2 ? { id, points: timed } : null;

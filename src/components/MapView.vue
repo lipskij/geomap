@@ -4,6 +4,7 @@ import L from "leaflet";
 import type { Detection, Detections } from "../types";
 import { colorFor } from "../colors";
 import { copyText, esc } from "../export";
+import { validPos } from "../geo";
 import { FADE_SECONDS, MAX_ALT_M, STALE_SECONDS } from "../config";
 import {
   RESTRICTION_LABEL,
@@ -193,9 +194,6 @@ function renderZoneLayer(zones: Zone[]) {
   }
 }
 
-const valid = (lat: number, lng: number) =>
-  Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
-
 function upsertMarker(
   existing: L.Marker | undefined,
   pos: L.LatLngTuple,
@@ -267,7 +265,7 @@ function update(detections: Detections) {
       pendingPaths.delete(id);
     }
 
-    if (valid(d.drone_lat, d.drone_long)) {
+    if (validPos(d.drone_lat, d.drone_long)) {
       const pos: L.LatLngTuple = [d.drone_lat, d.drone_long];
       t.drone = upsertMarker(
         t.drone,
@@ -285,7 +283,7 @@ function update(detections: Detections) {
       }
     }
 
-    if (valid(d.pilot_lat, d.pilot_long)) {
+    if (validPos(d.pilot_lat, d.pilot_long)) {
       const pos: L.LatLngTuple = [d.pilot_lat, d.pilot_long];
       t.pilot = upsertMarker(t.pilot, pos, pilotIcon(color), t.pilotPopup, d);
       appendPath(t.pilotPath, pos);
