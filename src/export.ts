@@ -3,7 +3,7 @@ import type { TrackPoint } from "./composables/useTrackHistory";
 export type ExportFormat = "gpx" | "kml" | "csv";
 
 const iso = (t: number) => new Date(t * 1000).toISOString();
-const esc = (s: string) => s.replace(/[<>&"]/g, (c) => `&#${c.charCodeAt(0)};`);
+export const esc = (s: string) => s.replace(/[<>&"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 function toGpx(id: string, pts: TrackPoint[]): string {
   const seg = pts

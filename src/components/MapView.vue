@@ -3,6 +3,8 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import L from "leaflet";
 import type { Detection, Detections } from "../types";
 import { colorFor } from "../colors";
+import { esc } from "../export";
+import { FADE_SECONDS, MAX_ALT_M, STALE_SECONDS } from "../config";
 import {
   RESTRICTION_LABEL,
   type Restriction,
@@ -10,23 +12,12 @@ import {
   type ZoneCheck,
 } from "../zones";
 
-const props = withDefaults(
-  defineProps<{
-    detections: Detections;
-    zones?: Zone[];
-    checks?: Record<string, ZoneCheck>;
-    following?: string | null;
-    fadeSeconds?: number;
-    staleSeconds?: number;
-  }>(),
-  {
-    zones: () => [],
-    checks: () => ({}),
-    following: null,
-    fadeSeconds: 10,
-    staleSeconds: 60,
-  },
-);
+const props = defineProps<{
+  detections: Detections;
+  zones: Zone[];
+  checks: Record<string, ZoneCheck>;
+  following: string | null;
+}>();
 const emit = defineEmits<{ unfollow: [] }>();
 
 interface PopupView {
@@ -143,15 +134,6 @@ function createPopup(kind: "drone" | "pilot"): PopupView {
   return { el, set };
 }
 
-const esc = (s: string) =>
-  s.replace(
-    /[&<>"']/g,
-    (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        c
-      ]!,
-  );
-
 // Zone status block in the drone popup
 function renderZones(el: HTMLElement, check?: ZoneCheck) {
   if (!check) {
@@ -164,7 +146,7 @@ function renderZones(el: HTMLElement, check?: ZoneCheck) {
       `<div class="zrow ${z.restriction}">${esc(RESTRICTION_LABEL[z.restriction])} · <b>${esc(z.name)}</b> · ${z.lowerM}–${z.upperM} m</div>`,
   );
   if (check.aboveMax)
-    rows.push('<div class="zrow above">Above 120 m limit</div>');
+    rows.push(`<div class="zrow above">Above ${MAX_ALT_M} m limit</div>`);
   if (!rows.length) rows.push('<div class="zrow ok">No zone</div>');
   el.innerHTML = rows.join("");
 }
@@ -275,12 +257,12 @@ function update(detections: Detections) {
   let followPos: L.LatLngTuple | null = null;
 
   for (const [id, d] of Object.entries(detections)) {
-    if (!d.last_update || now - d.last_update > props.staleSeconds) {
+    if (!d.last_update || now - d.last_update > STALE_SECONDS) {
       removeTrack(id);
       continue;
     }
 
-    const faded = now - d.last_update > props.fadeSeconds;
+    const faded = now - d.last_update > FADE_SECONDS;
     const color = colorFor(id);
     let t = tracks.get(id);
     if (!t) {

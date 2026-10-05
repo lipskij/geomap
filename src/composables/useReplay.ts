@@ -51,7 +51,6 @@ export function useReplay() {
   const duration = computed(() =>
     tracks.value.length ? end.value - start.value : 0,
   );
-  const ids = computed(() => tracks.value.map((t) => REPLAY_PREFIX + t.id));
 
   function render() {
     const abs = start.value + position.value;
@@ -152,7 +151,6 @@ export function useReplay() {
 
   return {
     tracks,
-    ids,
     fileName,
     error,
     playing,

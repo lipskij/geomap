@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref, shallowRef, watch } from "vue";
 import MapView from "./components/MapView.vue";
 import DroneList from "./components/DroneList.vue";
 import ToastStack from "./components/ToastStack.vue";
@@ -9,16 +9,9 @@ import { useDetections } from "./composables/useDetections";
 import { useTrackHistory } from "./composables/useTrackHistory";
 import { useToasts } from "./composables/useToasts";
 import { useZones } from "./composables/useZones";
-import { useActiveSubset } from "./composables/useActiveSubset";
-import { checkPosition, isZoneActive, type ZoneCheck } from "./zones";
+import { checkPosition, isZoneActive, type Zone, type ZoneCheck } from "./zones";
 import { exportTrack, type ExportFormat } from "./export";
-import {
-  FADE_SECONDS,
-  MAX_ALT_M,
-  POLL_MS,
-  STALE_SECONDS,
-  ZONES_ENABLED,
-} from "./config";
+import { MAX_ALT_M, POLL_MS, STALE_SECONDS, ZONES_ENABLED } from "./config";
 
 const { detections: live, error } = useDetections(POLL_MS);
 const replay = useReplay();
@@ -74,12 +67,15 @@ const { zones, error: zonesError } = useZones();
 
 // Zones active right now. Re-checked every poll, but only replaced when the
 // set changes, so the map doesn't redraw these layers every second.
-const activeZones = useActiveSubset(
-  zones,
-  detections,
-  (z) => isZoneActive(z),
-  (z) => z.id,
-);
+const activeZones = shallowRef<Zone[]>([]);
+let lastZones: Zone[] | null = null;
+watch([zones, detections], () => {
+  const next = zones.value.filter((z) => isZoneActive(z));
+  const keys = (list: Zone[]) => list.map((z) => z.id).join("|");
+  if (zones.value !== lastZones || keys(next) !== keys(activeZones.value))
+    activeZones.value = next;
+  lastZones = zones.value;
+});
 
 // Per-drone zone / altitude status (only when zone data is available)
 const checks = computed<Record<string, ZoneCheck>>(() => {
@@ -150,8 +146,6 @@ function onExport(id: string, format: ExportFormat) {
     :zones="activeZones"
     :checks="checks"
     :following="following"
-    :fade-seconds="FADE_SECONDS"
-    :stale-seconds="STALE_SECONDS"
     @unfollow="following = null"
   />
   <DroneList
