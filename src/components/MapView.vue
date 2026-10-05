@@ -3,7 +3,8 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import L from "leaflet";
 import type { Detection, Detections } from "../types";
 import { colorFor } from "../colors";
-import { esc } from "../export";
+import { copyText, esc } from "../export";
+import { validPos } from "../geo";
 import { FADE_SECONDS, MAX_ALT_M, STALE_SECONDS } from "../config";
 import {
   RESTRICTION_LABEL,
@@ -76,20 +77,6 @@ function pilotIcon(color: string): L.DivIcon {
   <path d="M5.5 17c1-3 3-4.5 5.5-4.5s4.5 1.5 5.5 4.5" fill="#fff"/>
 </svg>`,
   });
-}
-
-async function copyText(text: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    // Fallback for non-secure contexts (plain http on LAN)
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    ta.remove();
-  }
 }
 
 // Popup built once as DOM; values are updated in place so it stays live while open
@@ -207,9 +194,6 @@ function renderZoneLayer(zones: Zone[]) {
   }
 }
 
-const valid = (lat: number, lng: number) =>
-  Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
-
 function upsertMarker(
   existing: L.Marker | undefined,
   pos: L.LatLngTuple,
@@ -281,7 +265,7 @@ function update(detections: Detections) {
       pendingPaths.delete(id);
     }
 
-    if (valid(d.drone_lat, d.drone_long)) {
+    if (validPos(d.drone_lat, d.drone_long)) {
       const pos: L.LatLngTuple = [d.drone_lat, d.drone_long];
       t.drone = upsertMarker(
         t.drone,
@@ -299,7 +283,7 @@ function update(detections: Detections) {
       }
     }
 
-    if (valid(d.pilot_lat, d.pilot_long)) {
+    if (validPos(d.pilot_lat, d.pilot_long)) {
       const pos: L.LatLngTuple = [d.pilot_lat, d.pilot_long];
       t.pilot = upsertMarker(t.pilot, pos, pilotIcon(color), t.pilotPopup, d);
       appendPath(t.pilotPath, pos);
@@ -422,11 +406,13 @@ onBeforeUnmount(() => {
   background: none;
   cursor: pointer;
   padding: 0 4px;
+  border-radius: 4px;
   font-size: 16px;
   color: #4b5563;
 }
 :deep(.rid-popup button:hover) {
-  color: #1059bf;
+  background: #e5e7eb;
+  color: #111827;
 }
 :deep(.rid-popup .zones) {
   margin-top: 4px;

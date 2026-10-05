@@ -1,5 +1,6 @@
 import { watch, type Ref } from "vue";
 import type { Detections } from "../types";
+import { validPos } from "../geo";
 
 export interface TrackPoint {
   t: number; // unix seconds
@@ -8,6 +9,8 @@ export interface TrackPoint {
   alt: number;
   speed: number; // m/s
   rssi: number;
+  pilotLat: number;
+  pilotLng: number;
 }
 
 const MAX_POINTS = 10_000; // per drone
@@ -18,7 +21,7 @@ export function useTrackHistory(detections: Ref<Detections>) {
 
   watch(detections, (dets) => {
     for (const d of Object.values(dets)) {
-      if (!d.last_update || (d.drone_lat === 0 && d.drone_long === 0)) continue;
+      if (!d.last_update || !validPos(d.drone_lat, d.drone_long)) continue;
       let pts = history.get(d.basic_id);
       if (!pts) history.set(d.basic_id, (pts = []));
       if (pts.length && pts[pts.length - 1].t === d.last_update) continue; // no new data
@@ -29,6 +32,8 @@ export function useTrackHistory(detections: Ref<Detections>) {
         alt: d.drone_altitude,
         speed: d.drone_speed,
         rssi: d.rssi,
+        pilotLat: d.pilot_lat,
+        pilotLng: d.pilot_long,
       });
       if (pts.length > MAX_POINTS) pts.shift();
     }

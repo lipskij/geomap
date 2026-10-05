@@ -3,6 +3,20 @@ import type { TrackPoint } from "./composables/useTrackHistory";
 export type ExportFormat = "gpx" | "kml" | "csv";
 
 const iso = (t: number) => new Date(t * 1000).toISOString();
+export async function copyText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Fallback for non-secure contexts (plain http on LAN)
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+}
+
 export const esc = (s: string) => s.replace(/[<>&"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 function toGpx(id: string, pts: TrackPoint[]): string {
@@ -45,11 +59,18 @@ function toKml(id: string, pts: TrackPoint[]): string {
 
 function toCsv(pts: TrackPoint[]): string {
   const rows = pts.map((p) =>
-    [iso(p.t), p.lat, p.lng, p.alt, (p.speed * 3.6).toFixed(1), p.rssi].join(
-      ",",
-    ),
+    [
+      iso(p.t),
+      p.lat,
+      p.lng,
+      p.alt,
+      (p.speed * 3.6).toFixed(1),
+      p.rssi,
+      p.pilotLat,
+      p.pilotLng,
+    ].join(","),
   );
-  return ["time,lat,lng,alt_m,speed_kmh,rssi_dbm", ...rows].join("\n") + "\n";
+  return ["time,lat,lng,alt_m,speed_kmh,rssi_dbm,pilot_lat,pilot_long", ...rows].join("\n") + "\n";
 }
 
 const MIME: Record<ExportFormat, string> = {

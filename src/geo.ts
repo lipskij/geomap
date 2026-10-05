@@ -3,6 +3,10 @@
 export type Rings = number[][][]; // [outer, ...holes]
 export type BBox = [number, number, number, number]; // minLng, minLat, maxLng, maxLat
 
+// Finite and not the 0,0 "no fix" placeholder
+export const validPos = (lat?: number, lng?: number) =>
+  Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+
 export function bboxOf(rings: Rings): BBox {
   let minLng = Infinity,
     minLat = Infinity,

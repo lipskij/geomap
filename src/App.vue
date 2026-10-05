@@ -4,7 +4,7 @@ import MapView from "./components/MapView.vue";
 import DroneList from "./components/DroneList.vue";
 import ToastStack from "./components/ToastStack.vue";
 import ReplayPanel from "./components/ReplayPanel.vue";
-import { useReplay } from "./composables/useReplay";
+import { trackStats, useReplay } from "./composables/useReplay";
 import { useDetections } from "./composables/useDetections";
 import { useTrackHistory } from "./composables/useTrackHistory";
 import { useToasts } from "./composables/useToasts";
@@ -50,6 +50,10 @@ watch(replay.detections, () => {
   for (const [id, pts] of Object.entries(replay.pathsAtPosition()))
     mapView.value?.setPath(id, pts);
 });
+
+const replayStats = computed(() =>
+  trackStats(replay.tracks.value, zones.value),
+);
 
 const mapView = ref<InstanceType<typeof MapView>>();
 const selected = ref<string | null>(null);
@@ -153,6 +157,7 @@ function onExport(id: string, format: ExportFormat) {
     :selected="selected"
     :following="following"
     :checks="checks"
+    :stats="replayStats"
     @select="focusDrone"
     @follow="setFollow"
     @export="onExport"
