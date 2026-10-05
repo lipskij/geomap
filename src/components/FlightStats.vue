@@ -58,7 +58,7 @@ async function copy(key: string, text: string) {
       </dd>
     </template>
     <dt>Flight time</dt>
-    <dd>{{ fmtDuration(s.duration) }}</dd>
+    <dd>{{ fmtDuration(s.endTime - s.startTime) }}</dd>
     <dt>Longest signal gap</dt>
     <dd>{{ fmtDuration(s.maxGap) }}</dd>
     <template v-for="[key, label, ll] in positions()" :key="key">

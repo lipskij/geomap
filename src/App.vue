@@ -136,9 +136,11 @@ function setFollow(id: string | null) {
   if (id) focusDrone(id);
 }
 
-// Stats of a live drone from its recorded history (seconds → ms)
-// ponytail: full recompute per poll for the opened drone; go incremental if long flights lag
-function liveStats(id: string) {
+// Replayed drone: whole-file stats. Live drone: from its recorded history (seconds → ms).
+// ponytail: live is a full recompute per poll for the opened drone; go incremental if long flights lag
+function statsFor(id: string) {
+  if (replay.fileName.value)
+    return replayStats.value.find((s) => s.id === id) ?? null;
   const pts = getTrack(id).map((p) => ({ ...p, t: p.t * 1000 }));
   return pts.length ? trackStats(id, pts, zones.value) : null;
 }
@@ -166,8 +168,7 @@ function onExport(id: string, format: ExportFormat) {
     :selected="selected"
     :following="following"
     :checks="checks"
-    :stats="replayStats"
-    :live-stats="replay.fileName.value ? undefined : liveStats"
+    :stats-for="statsFor"
     @select="focusDrone"
     @follow="setFollow"
     @export="onExport"

@@ -13,8 +13,7 @@ const props = defineProps<{
   selected: string | null;
   following: string | null;
   checks?: Record<string, ZoneCheck>;
-  stats?: TrackStats[]; // replay only
-  liveStats?: (id: string) => TrackStats | null; // live only, shown when a drone row is expanded
+  statsFor: (id: string) => TrackStats | null; // shown when a drone row is expanded
 }>();
 const emit = defineEmits<{
   select: [id: string];
@@ -26,18 +25,15 @@ const open = ref(true);
 const exportMenu = ref<string | null>(null);
 const formats: ExportFormat[] = ["gpx", "kml", "csv"];
 
-const statsOpen = ref(true);
-const expanded = ref<string | null>(null); // live drone whose stats are shown
-// Recomputed on every poll (new drones array), so values follow the live flight
+const expanded = ref<string | null>(null); // drone whose stats are shown
+// Recomputed on every poll (new drones array), so live values follow the flight
 const expandedStats = computed(() =>
-  props.drones && props.liveStats && expanded.value
-    ? props.liveStats(expanded.value)
-    : null,
+  props.drones && expanded.value ? props.statsFor(expanded.value) : null,
 );
 
 function onRow(id: string) {
   emit("select", id);
-  if (props.liveStats) expanded.value = expanded.value === id ? null : id;
+  expanded.value = expanded.value === id ? null : id;
 }
 
 const sorted = computed(() =>
@@ -81,7 +77,7 @@ function doExport(id: string, f: ExportFormat) {
         <div class="line">
           <button
             class="row"
-            :aria-expanded="liveStats ? expanded === d.basic_id : undefined"
+            :aria-expanded="expanded === d.basic_id"
             @click="onRow(d.basic_id)"
           >
             <span
@@ -138,30 +134,14 @@ function doExport(id: string, f: ExportFormat) {
           class="stat"
           :style="{ borderLeftColor: colorFor(d.basic_id) }"
         >
-          <FlightStats :s="expandedStats" live />
+          <FlightStats
+            :s="expandedStats"
+            :live="!d.basic_id.startsWith(REPLAY_PREFIX)"
+          />
         </div>
       </li>
     </ul>
 
-    <template v-if="stats?.length">
-      <button
-        class="header section"
-        :aria-expanded="statsOpen"
-        @click="statsOpen = !statsOpen"
-      >
-        <span>Flight stats</span>
-      </button>
-      <div v-if="statsOpen" class="stats">
-        <div
-          v-for="s in stats"
-          :key="s.id"
-          class="stat"
-          :style="{ borderLeftColor: colorFor(s.id) }"
-        >
-          <FlightStats :s="s" />
-        </div>
-      </div>
-    </template>
   </section>
 </template>
 
@@ -335,20 +315,10 @@ button {
   color: #1f2937;
   background: #fff;
 }
-.section {
-  border-top: 1px solid #e5e7eb;
-}
-.stats {
-  overflow-y: auto;
-  border-top: 1px solid #e5e7eb;
-}
 .stat {
   padding: 8px 12px 8px 9px;
-  background: #fff; /* also under a highlighted live row */
+  background: #fff; /* also under a highlighted row */
   border-left: 3px solid; /* drone color, tells blocks apart in multi-drone files */
-}
-.stat + .stat {
-  border-top: 1px solid #f3f4f6;
 }
 .fmt:hover {
   background: #f3f4f6;

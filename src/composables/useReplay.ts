@@ -61,7 +61,6 @@ export interface TrackStats {
   maxPilotDist: number; // m, from the pilot, or from takeoff when the file has no pilot data
   fromTakeoff: boolean;
   maxGap: number; // ms, longest time between two recorded points
-  duration: number; // ms
   startTime: number; // ms since epoch
   endTime: number;
   start: Tuple;
@@ -129,7 +128,6 @@ export function trackStats(
     maxPilotDist,
     fromTakeoff: !pilotPt,
     maxGap,
-    duration: last.t - first.t,
     startTime: first.t,
     endTime: last.t,
     start: [first.lat, first.lng],
