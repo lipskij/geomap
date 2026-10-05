@@ -7,6 +7,9 @@ export type BBox = [number, number, number, number]; // minLng, minLat, maxLng, 
 export const validPos = (lat?: number, lng?: number) =>
   Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
 
+export const fmtPos = (lat: number, lng: number) =>
+  `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+
 export function bboxOf(rings: Rings): BBox {
   let minLng = Infinity,
     minLat = Infinity,

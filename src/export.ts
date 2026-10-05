@@ -58,7 +58,7 @@ function toKml(id: string, pts: TrackPoint[]): string {
 `;
 }
 
-function toCsv(pts: TrackPoint[]): string {
+function toCsv(_id: string, pts: TrackPoint[]): string {
   const rows = pts.map((p) =>
     [
       iso(p.t),
@@ -86,12 +86,7 @@ export function exportTrack(
   format: ExportFormat,
 ): void {
   if (!pts.length) return;
-  const body =
-    format === "gpx"
-      ? toGpx(id, pts)
-      : format === "kml"
-        ? toKml(id, pts)
-        : toCsv(pts);
+  const body = { gpx: toGpx, kml: toKml, csv: toCsv }[format](id, pts);
   download(
     `${id}_${fileTime(pts[0].t)}.${format}`,
     body,

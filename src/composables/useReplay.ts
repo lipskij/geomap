@@ -39,6 +39,10 @@ function indexAt(pts: ReplayPoint[], time: number): number {
   return lo;
 }
 
+// Local 24 h clock time, e.g. "14:18:25"
+export const fmtClock = (t: number) =>
+  new Date(t).toLocaleTimeString([], { hour12: false });
+
 // "mm:ss", or "h:mm:ss" from one hour
 export function fmtDuration(ms: number): string {
   const s = Math.floor(ms / 1000);

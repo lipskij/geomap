@@ -3,17 +3,15 @@ import { computed, ref } from "vue";
 import { colorFor } from "../colors";
 import { copyText } from "../export";
 import { MAX_ALT_M } from "../config";
-import { fmtDuration, type TrackStats } from "../composables/useReplay";
+import { fmtPos } from "../geo";
+import { fmtClock, fmtDuration, type TrackStats } from "../composables/useReplay";
 
 // live: flight still in progress, so there is no end time / end position yet
 const props = defineProps<{ s: TrackStats; live?: boolean }>();
 
 const copied = ref<string | null>(null);
-// Local clock time; full date in the tooltip
-const clock = (t: number) =>
-  new Date(t).toLocaleTimeString([], { hour12: false });
-const pos = ([lat, lng]: [number, number]) =>
-  `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+// Clock times show the full date in the tooltip
+const pos = ([lat, lng]: [number, number]) => fmtPos(lat, lng);
 
 function positions() {
   const s = props.s;
@@ -66,7 +64,7 @@ async function copy(key: string, text: string) {
     <div class="alt-head">
       <span>Altitude</span>
       <span v-if="hover !== null">
-        {{ clock(s.altProfile[hover][0]) }} ·
+        {{ fmtClock(s.altProfile[hover][0]) }} ·
         {{ Math.round(s.altProfile[hover][1]) }} m
       </span>
     </div>
@@ -122,12 +120,12 @@ async function copy(key: string, text: string) {
     </template>
     <dt>Started</dt>
     <dd :title="new Date(s.startTime).toLocaleString()">
-      {{ clock(s.startTime) }}
+      {{ fmtClock(s.startTime) }}
     </dd>
     <template v-if="!live">
       <dt>Ended</dt>
       <dd :title="new Date(s.endTime).toLocaleString()">
-        {{ clock(s.endTime) }}
+        {{ fmtClock(s.endTime) }}
       </dd>
     </template>
     <dt>Flight time</dt>

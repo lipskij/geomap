@@ -4,7 +4,7 @@ import L from "leaflet";
 import type { Detection, Detections, PathPoint } from "../types";
 import { colorFor } from "../colors";
 import { copyText, esc } from "../export";
-import { validPos } from "../geo";
+import { fmtPos, validPos } from "../geo";
 import { FADE_SECONDS, GAP_SECONDS, MAX_ALT_M, STALE_SECONDS } from "../config";
 import { REPLAY_PREFIX } from "../composables/useReplay";
 import {
@@ -112,7 +112,7 @@ function createPopup(kind: "drone" | "pilot"): PopupView {
         : [d.pilot_lat, d.pilot_long];
     field("id")!.textContent = d.basic_id;
     field("rssi")!.textContent = String(d.rssi);
-    field("pos")!.textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    field("pos")!.textContent = fmtPos(lat, lng);
     if (kind === "drone") {
       field("alt")!.textContent = String(d.drone_altitude);
       field("speed")!.textContent =

@@ -7,7 +7,11 @@ import FlightStats from "./FlightStats.vue";
 import type { ZoneCheck } from "../zones";
 import { colorFor } from "../colors";
 import { FADE_SECONDS } from "../config";
-import { REPLAY_PREFIX, type TrackStats } from "../composables/useReplay";
+import {
+  fmtClock,
+  REPLAY_PREFIX,
+  type TrackStats,
+} from "../composables/useReplay";
 
 const props = defineProps<{
   drones: Detection[];
@@ -31,8 +35,6 @@ const formats: ExportFormat[] = ["gpx", "kml", "csv"];
 const alertsOpen = ref(false);
 // Alerts of drones no longer on the map can't be focused
 const present = computed(() => new Set(props.drones.map((d) => d.basic_id)));
-const alertTime = (t: number) =>
-  new Date(t).toLocaleTimeString([], { hour12: false });
 
 const expanded = ref<string | null>(null); // drone whose stats are shown
 // Recomputed on every poll (new drones array), so live values follow the flight
@@ -182,7 +184,7 @@ function doExport(id: string, f: ExportFormat) {
           <span class="text">{{ a.text }}</span>
           <span class="id">{{ a.droneId }}</span>
         </span>
-        <span class="age">{{ alertTime(a.time) }}</span>
+        <span class="age">{{ fmtClock(a.time) }}</span>
       </button>
     </div>
 
