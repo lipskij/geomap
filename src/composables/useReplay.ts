@@ -1,5 +1,5 @@
 import { computed, onBeforeUnmount, ref, shallowRef } from "vue";
-import type { Detections } from "../types";
+import type { Detections, PathPoint } from "../types";
 import {
   parseTrackFile,
   type ReplayPoint,
@@ -39,6 +39,10 @@ function indexAt(pts: ReplayPoint[], time: number): number {
   return lo;
 }
 
+// Local 24 h clock time, e.g. "14:18:25"
+export const fmtClock = (t: number) =>
+  new Date(t).toLocaleTimeString([], { hour12: false });
+
 // "mm:ss", or "h:mm:ss" from one hour
 export function fmtDuration(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -66,6 +70,20 @@ export interface TrackStats {
   start: Tuple;
   end: Tuple;
   pilot: Tuple | null; // first known pilot position
+  altProfile: Tuple[]; // [ms, m], at most PROFILE_POINTS, keeps each bucket's peak
+}
+
+const PROFILE_POINTS = 120;
+
+function altProfile(pts: ReplayPoint[]): Tuple[] {
+  const size = Math.ceil(pts.length / PROFILE_POINTS);
+  const out: Tuple[] = [];
+  for (let i = 0; i < pts.length; i += size) {
+    let peak = pts[i];
+    for (const p of pts.slice(i, i + size)) if (p.alt > peak.alt) peak = p;
+    out.push([peak.t, peak.alt]);
+  }
+  return out;
 }
 
 // Whole-track summary (replayed or live drone; pts must not be empty). Time between
@@ -133,6 +151,7 @@ export function trackStats(
     start: [first.lat, first.lng],
     end: [last.lat, last.lng],
     pilot: pilotPt ? [pilotPt.pilotLat!, pilotPt.pilotLng!] : null,
+    altProfile: altProfile(pts),
   };
 }
 
@@ -218,16 +237,16 @@ export function useReplay() {
   }
 
   // Each replayed drone's path from the start of its track up to the current position
-  function pathsAtPosition(): Record<string, [number, number][]> {
+  function pathsAtPosition(): Record<string, PathPoint[]> {
     const abs = start.value + position.value;
-    const out: Record<string, [number, number][]> = {};
+    const out: Record<string, PathPoint[]> = {};
     for (const track of tracks.value) {
       const id = REPLAY_PREFIX + track.id;
-      const pts: [number, number][] = track.points
+      const pts: PathPoint[] = track.points
         .filter((p) => p.t <= abs)
-        .map((p) => [p.lat, p.lng]);
+        .map((p) => [p.lat, p.lng, p.t]);
       const d = detections.value[id];
-      if (d) pts.push([d.drone_lat, d.drone_long]); // current (interpolated) position
+      if (d) pts.push([d.drone_lat, d.drone_long, abs]); // current (interpolated) position
       out[id] = pts;
     }
     return out;

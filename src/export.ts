@@ -1,4 +1,5 @@
 import type { TrackPoint } from "./composables/useTrackHistory";
+import type { Alert } from "./composables/useToasts";
 
 export type ExportFormat = "gpx" | "kml" | "csv";
 
@@ -57,7 +58,7 @@ function toKml(id: string, pts: TrackPoint[]): string {
 `;
 }
 
-function toCsv(pts: TrackPoint[]): string {
+function toCsv(_id: string, pts: TrackPoint[]): string {
   const rows = pts.map((p) =>
     [
       iso(p.t),
@@ -85,16 +86,34 @@ export function exportTrack(
   format: ExportFormat,
 ): void {
   if (!pts.length) return;
-  const body =
-    format === "gpx"
-      ? toGpx(id, pts)
-      : format === "kml"
-        ? toKml(id, pts)
-        : toCsv(pts);
-  const url = URL.createObjectURL(new Blob([body], { type: MIME[format] }));
+  const body = { gpx: toGpx, kml: toKml, csv: toCsv }[format](id, pts);
+  download(
+    `${id}_${fileTime(pts[0].t)}.${format}`,
+    body,
+    MIME[format],
+  );
+}
+
+const fileTime = (t: number) => iso(t).slice(0, 19).replace(/[:T]/g, "-");
+
+function download(name: string, body: string, type: string) {
+  const url = URL.createObjectURL(new Blob([body], { type }));
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${id}_${iso(pts[0].t).slice(0, 19).replace(/[:T]/g, "-")}.${format}`;
+  a.download = name;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// Alert log as CSV (times in ms); fields quoted since zone names may contain commas
+export function exportAlerts(alerts: Alert[]): void {
+  const q = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const rows = alerts.map((a) =>
+    [iso(a.time / 1000), a.kind, q(a.droneId), q(a.text)].join(","),
+  );
+  download(
+    `alerts_${fileTime(Date.now() / 1000)}.csv`,
+    ["time,kind,drone_id,message", ...rows].join("\n") + "\n",
+    MIME.csv,
+  );
 }
