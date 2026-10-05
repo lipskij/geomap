@@ -4,7 +4,7 @@ import MapView from "./components/MapView.vue";
 import DroneList from "./components/DroneList.vue";
 import ToastStack from "./components/ToastStack.vue";
 import ReplayPanel from "./components/ReplayPanel.vue";
-import { trackStats, useReplay } from "./composables/useReplay";
+import { REPLAY_PREFIX, trackStats, useReplay } from "./composables/useReplay";
 import { useDetections } from "./composables/useDetections";
 import { useTrackHistory } from "./composables/useTrackHistory";
 import { useToasts } from "./composables/useToasts";
@@ -52,7 +52,9 @@ watch(replay.detections, () => {
 });
 
 const replayStats = computed(() =>
-  trackStats(replay.tracks.value, zones.value),
+  replay.tracks.value.map((t) =>
+    trackStats(REPLAY_PREFIX + t.id, t.points, zones.value),
+  ),
 );
 
 const mapView = ref<InstanceType<typeof MapView>>();
@@ -134,6 +136,13 @@ function setFollow(id: string | null) {
   if (id) focusDrone(id);
 }
 
+// Stats of a live drone from its recorded history (seconds → ms)
+// ponytail: full recompute per poll for the opened drone; go incremental if long flights lag
+function liveStats(id: string) {
+  const pts = getTrack(id).map((p) => ({ ...p, t: p.t * 1000 }));
+  return pts.length ? trackStats(id, pts, zones.value) : null;
+}
+
 function onExport(id: string, format: ExportFormat) {
   exportTrack(id, getTrack(id), format);
 }
@@ -158,6 +167,7 @@ function onExport(id: string, format: ExportFormat) {
     :following="following"
     :checks="checks"
     :stats="replayStats"
+    :live-stats="replay.fileName.value ? undefined : liveStats"
     @select="focusDrone"
     @follow="setFollow"
     @export="onExport"

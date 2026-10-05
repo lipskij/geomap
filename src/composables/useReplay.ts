@@ -69,72 +69,73 @@ export interface TrackStats {
   pilot: Tuple | null; // first known pilot position
 }
 
-// Whole-track summary per replayed drone. Time between two points is attributed
-// to the state at the earlier one (zones inside, above the limit).
-export function trackStats(tracks: ReplayTrack[], zones: Zone[]): TrackStats[] {
-  return tracks.map((track) => {
-    const pts = track.points;
-    const first = pts[0];
-    const last = pts[pts.length - 1];
-    const pilotPt = pts.find((p) => validPos(p.pilotLat, p.pilotLng));
-    let maxSpeed = 0;
-    let maxAlt = -Infinity;
-    let aboveMaxMs = 0;
-    let zoneEntries = 0;
-    let distance = 0;
-    let maxPilotDist = 0;
-    let maxGap = 0;
-    const zoneTime = new Map<string, { name: string; ms: number }>();
-    let inside: Zone[] = [];
-    pts.forEach((p, i) => {
-      const prev = pts[i - 1];
-      if (prev) {
-        const dt = p.t - prev.t;
-        const d = distanceM(prev, p);
-        distance += d;
-        maxGap = Math.max(maxGap, dt);
-        if (prev.alt > MAX_ALT_M) aboveMaxMs += dt;
-        for (const z of inside) zoneTime.get(z.id)!.ms += dt;
-        maxSpeed = Math.max(maxSpeed, p.speed ?? d / (dt / 1000));
-      } else if (p.speed !== undefined) maxSpeed = p.speed;
-      maxAlt = Math.max(maxAlt, p.alt);
+// Whole-track summary (replayed or live drone; pts must not be empty). Time between
+// two points is attributed to the state at the earlier one (zones inside, above the limit).
+export function trackStats(
+  id: string,
+  pts: ReplayPoint[],
+  zones: Zone[],
+): TrackStats {
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const pilotPt = pts.find((p) => validPos(p.pilotLat, p.pilotLng));
+  let maxSpeed = 0;
+  let maxAlt = -Infinity;
+  let aboveMaxMs = 0;
+  let zoneEntries = 0;
+  let distance = 0;
+  let maxPilotDist = 0;
+  let maxGap = 0;
+  const zoneTime = new Map<string, { name: string; ms: number }>();
+  let inside: Zone[] = [];
+  pts.forEach((p, i) => {
+    const prev = pts[i - 1];
+    if (prev) {
+      const dt = p.t - prev.t;
+      const d = distanceM(prev, p);
+      distance += d;
+      maxGap = Math.max(maxGap, dt);
+      if (prev.alt > MAX_ALT_M) aboveMaxMs += dt;
+      for (const z of inside) zoneTime.get(z.id)!.ms += dt;
+      maxSpeed = Math.max(maxSpeed, p.speed ?? d / (dt / 1000));
+    } else if (p.speed !== undefined) maxSpeed = p.speed;
+    maxAlt = Math.max(maxAlt, p.alt);
 
-      const origin = pilotPt
-        ? validPos(p.pilotLat, p.pilotLng)
-          ? { lat: p.pilotLat!, lng: p.pilotLng! }
-          : undefined
-        : first;
-      if (origin) maxPilotDist = Math.max(maxPilotDist, distanceM(origin, p));
+    const origin = pilotPt
+      ? validPos(p.pilotLat, p.pilotLng)
+        ? { lat: p.pilotLat!, lng: p.pilotLng! }
+        : undefined
+      : first;
+    if (origin) maxPilotDist = Math.max(maxPilotDist, distanceM(origin, p));
 
-      const now = checkPosition(p.lat, p.lng, p.alt, zones, MAX_ALT_M).zones.filter(
-        (z) => z.restriction === "PROHIBITED" && isZoneActive(z, new Date(p.t)),
-      );
-      for (const z of now) {
-        if (inside.some((o) => o.id === z.id)) continue;
-        zoneEntries++;
-        if (!zoneTime.has(z.id)) zoneTime.set(z.id, { name: z.name, ms: 0 });
-      }
-      inside = now;
-    });
-    return {
-      id: REPLAY_PREFIX + track.id,
-      maxSpeed,
-      maxAlt,
-      aboveMaxMs,
-      zoneEntries: zones.length ? zoneEntries : null,
-      zones: [...zoneTime.values()],
-      distance,
-      maxPilotDist,
-      fromTakeoff: !pilotPt,
-      maxGap,
-      duration: last.t - first.t,
-      startTime: first.t,
-      endTime: last.t,
-      start: [first.lat, first.lng],
-      end: [last.lat, last.lng],
-      pilot: pilotPt ? [pilotPt.pilotLat!, pilotPt.pilotLng!] : null,
-    };
+    const now = checkPosition(p.lat, p.lng, p.alt, zones, MAX_ALT_M).zones.filter(
+      (z) => z.restriction === "PROHIBITED" && isZoneActive(z, new Date(p.t)),
+    );
+    for (const z of now) {
+      if (inside.some((o) => o.id === z.id)) continue;
+      zoneEntries++;
+      if (!zoneTime.has(z.id)) zoneTime.set(z.id, { name: z.name, ms: 0 });
+    }
+    inside = now;
   });
+  return {
+    id,
+    maxSpeed,
+    maxAlt,
+    aboveMaxMs,
+    zoneEntries: zones.length ? zoneEntries : null,
+    zones: [...zoneTime.values()],
+    distance,
+    maxPilotDist,
+    fromTakeoff: !pilotPt,
+    maxGap,
+    duration: last.t - first.t,
+    startTime: first.t,
+    endTime: last.t,
+    start: [first.lat, first.lng],
+    end: [last.lat, last.lng],
+    pilot: pilotPt ? [pilotPt.pilotLat!, pilotPt.pilotLng!] : null,
+  };
 }
 
 export function useReplay() {
