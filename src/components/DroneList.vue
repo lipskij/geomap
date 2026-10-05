@@ -48,7 +48,19 @@ function doExport(id: string, f: ExportFormat) {
   <section class="panel">
     <button class="header" :aria-expanded="open" @click="open = !open">
       <span>Drones ({{ drones.length }})</span>
-      <span class="chevron" :class="{ open }">▾</span>
+      <svg
+        class="chevron"
+        :class="{ open }"
+        viewBox="0 0 10 10"
+        aria-hidden="true"
+      >
+        <path
+          d="M2 3.5 5 6.5 8 3.5"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+        />
+      </svg>
     </button>
 
     <ul v-if="open" class="list">
@@ -154,11 +166,13 @@ button {
   font-weight: 600;
 }
 .chevron {
+  width: 1.25em;
+  height: 1.25em;
   transition: transform 0.15s;
-  transform: rotate(-90deg);
+  transform: scaleY(-1);
 }
 .chevron.open {
-  transform: rotate(0deg);
+  transform: scaleY(1);
 }
 .list {
   list-style: none;

@@ -98,10 +98,10 @@ function createPopup(kind: "drone" | "pilot"): PopupView {
   el.className = "rid-popup";
   el.innerHTML = `
     <b>${kind === "drone" ? "Drone" : "Pilot"}</b>
-    <div class="line">ID: <code data-f="id"></code><button data-copy="id" title="Copy ID">⧉</button></div>
+    <div class="line">ID: <code data-f="id"></code><button class=copyBtn data-copy="id" title="Copy ID">⧉</button></div>
     <div>RSSI: <span data-f="rssi"></span> dBm</div>
     ${kind === "drone" ? '<div>Alt: <span data-f="alt"></span> m</div><div>Speed: <span data-f="speed"></span></div>' : ""}
-    <div class="line"><code data-f="pos"></code><button data-copy="pos" title="Copy coordinates">⧉</button></div>
+    <div class="line"><code data-f="pos"></code><button class=copyBtn data-copy="pos" title="Copy coordinates">⧉</button></div>
     ${kind === "drone" ? '<div class="zones" data-f="zones"></div>' : ""}`;
 
   const field = (name: string) =>
@@ -422,11 +422,11 @@ onBeforeUnmount(() => {
   background: none;
   cursor: pointer;
   padding: 0 4px;
-  font-size: 14px;
+  font-size: 16px;
   color: #4b5563;
 }
 :deep(.rid-popup button:hover) {
-  color: #111827;
+  color: #1059bf;
 }
 :deep(.rid-popup .zones) {
   margin-top: 4px;
