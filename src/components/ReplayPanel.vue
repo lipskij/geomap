@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { fmtDuration as fmt } from "../composables/useReplay";
 
 defineProps<{
   fileName: string;
@@ -25,14 +26,6 @@ function onFile(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (file) emit("load", file);
   (e.target as HTMLInputElement).value = ""; // allow loading the same file again
-}
-
-function fmt(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
-  const ss = String(s % 60).padStart(2, "0");
-  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 </script>
 
@@ -128,10 +121,11 @@ button {
   width: 100%;
   text-align: left;
   font-weight: 600;
-  padding: 2px 0;
+  padding: 2px 4px;
+  border-radius: 4px;
 }
 .open:hover {
-  color: #4363d8;
+  background: #f3f4f6;
 }
 .head {
   display: flex;

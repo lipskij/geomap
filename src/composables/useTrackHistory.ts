@@ -8,6 +8,8 @@ export interface TrackPoint {
   alt: number;
   speed: number; // m/s
   rssi: number;
+  pilotLat: number;
+  pilotLng: number;
 }
 
 const MAX_POINTS = 10_000; // per drone
@@ -29,6 +31,8 @@ export function useTrackHistory(detections: Ref<Detections>) {
         alt: d.drone_altitude,
         speed: d.drone_speed,
         rssi: d.rssi,
+        pilotLat: d.pilot_lat,
+        pilotLng: d.pilot_long,
       });
       if (pts.length > MAX_POINTS) pts.shift();
     }

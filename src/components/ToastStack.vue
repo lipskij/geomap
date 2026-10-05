@@ -100,9 +100,11 @@ const emit = defineEmits<{
   line-height: 1;
   color: #6b7280;
   cursor: pointer;
-  padding: 0 2px;
+  padding: 0 4px;
+  border-radius: 4px;
 }
 .close:hover {
+  background: #e5e7eb;
   color: #111827;
 }
 

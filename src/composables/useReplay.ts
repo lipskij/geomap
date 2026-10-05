@@ -5,6 +5,8 @@ import {
   type ReplayPoint,
   type ReplayTrack,
 } from "../replay/parse";
+import { checkPosition, isZoneActive, type Zone } from "../zones";
+import { MAX_ALT_M } from "../config";
 
 const TICK_MS = 250;
 export const REPLAY_PREFIX = "R-"; // replayed IDs are prefixed so they never collide with live ones
@@ -12,7 +14,10 @@ export const REPLAY_PREFIX = "R-"; // replayed IDs are prefixed so they never co
 const R = 6_371_000; // earth radius, m
 const rad = (d: number) => (d * Math.PI) / 180;
 
-function distanceM(a: ReplayPoint, b: ReplayPoint): number {
+function distanceM(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
   const dLat = rad(b.lat - a.lat);
   const dLng = rad(b.lng - a.lng);
   const h =
@@ -31,6 +36,108 @@ function indexAt(pts: ReplayPoint[], time: number): number {
     else hi = mid - 1;
   }
   return lo;
+}
+
+// "mm:ss", or "h:mm:ss" from one hour
+export function fmtDuration(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+type LatLng = { lat: number; lng: number };
+type Tuple = [number, number]; // lat, lng
+
+export interface TrackStats {
+  id: string;
+  maxSpeed: number; // m/s
+  maxAlt: number; // m
+  aboveMaxMs: number; // time above MAX_ALT_M
+  zoneEntries: number | null; // entries into active prohibited zones; null without zone data
+  zones: { name: string; ms: number }[]; // prohibited zones entered, time inside each
+  distance: number; // m flown
+  maxPilotDist: number; // m, from the pilot, or from takeoff when the file has no pilot data
+  fromTakeoff: boolean;
+  maxGap: number; // ms, longest time between two recorded points
+  duration: number; // ms
+  startTime: number; // ms since epoch
+  endTime: number;
+  start: Tuple;
+  end: Tuple;
+  pilot: Tuple | null; // first known pilot position
+}
+
+const validPos = (lat?: number, lng?: number) =>
+  Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+
+// Whole-track summary per replayed drone. Time between two points is attributed
+// to the state at the earlier one (zones inside, above the limit).
+export function trackStats(tracks: ReplayTrack[], zones: Zone[]): TrackStats[] {
+  return tracks.map((track) => {
+    const pts = track.points;
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    const pilotPt = pts.find((p) => validPos(p.pilotLat, p.pilotLng));
+    let maxSpeed = 0;
+    let maxAlt = -Infinity;
+    let aboveMaxMs = 0;
+    let zoneEntries = 0;
+    let distance = 0;
+    let maxPilotDist = 0;
+    let maxGap = 0;
+    const zoneTime = new Map<string, { name: string; ms: number }>();
+    let inside: Zone[] = [];
+    pts.forEach((p, i) => {
+      const prev = pts[i - 1];
+      if (prev) {
+        const dt = p.t - prev.t;
+        const d = distanceM(prev, p);
+        distance += d;
+        maxGap = Math.max(maxGap, dt);
+        if (prev.alt > MAX_ALT_M) aboveMaxMs += dt;
+        for (const z of inside) zoneTime.get(z.id)!.ms += dt;
+        maxSpeed = Math.max(maxSpeed, p.speed ?? d / (dt / 1000));
+      } else if (p.speed !== undefined) maxSpeed = p.speed;
+      maxAlt = Math.max(maxAlt, p.alt);
+
+      const origin: LatLng | undefined = pilotPt
+        ? validPos(p.pilotLat, p.pilotLng)
+          ? { lat: p.pilotLat!, lng: p.pilotLng! }
+          : undefined
+        : first;
+      if (origin) maxPilotDist = Math.max(maxPilotDist, distanceM(origin, p));
+
+      const now = checkPosition(p.lat, p.lng, p.alt, zones, MAX_ALT_M).zones.filter(
+        (z) => z.restriction === "PROHIBITED" && isZoneActive(z, new Date(p.t)),
+      );
+      for (const z of now) {
+        if (inside.some((o) => o.id === z.id)) continue;
+        zoneEntries++;
+        if (!zoneTime.has(z.id)) zoneTime.set(z.id, { name: z.name, ms: 0 });
+      }
+      inside = now;
+    });
+    return {
+      id: REPLAY_PREFIX + track.id,
+      maxSpeed,
+      maxAlt,
+      aboveMaxMs,
+      zoneEntries: zones.length ? zoneEntries : null,
+      zones: [...zoneTime.values()],
+      distance,
+      maxPilotDist,
+      fromTakeoff: !pilotPt,
+      maxGap,
+      duration: last.t - first.t,
+      startTime: first.t,
+      endTime: last.t,
+      start: [first.lat, first.lng],
+      end: [last.lat, last.lng],
+      pilot: pilotPt ? [pilotPt.pilotLat!, pilotPt.pilotLng!] : null,
+    };
+  });
 }
 
 export function useReplay() {
