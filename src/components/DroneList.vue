@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { Detection } from "../types";
-import type { ExportFormat } from "../export";
+import { exportAlerts, type ExportFormat } from "../export";
+import type { Alert } from "../composables/useToasts";
 import FlightStats from "./FlightStats.vue";
 import type { ZoneCheck } from "../zones";
 import { colorFor } from "../colors";
@@ -14,16 +15,24 @@ const props = defineProps<{
   following: string | null;
   checks?: Record<string, ZoneCheck>;
   statsFor: (id: string) => TrackStats | null; // shown when a drone row is expanded
+  alerts: Alert[]; // newest first
 }>();
 const emit = defineEmits<{
   select: [id: string];
   follow: [id: string | null];
   export: [id: string, format: ExportFormat];
+  clearAlerts: [];
 }>();
 
 const open = ref(true);
 const exportMenu = ref<string | null>(null);
 const formats: ExportFormat[] = ["gpx", "kml", "csv"];
+
+const alertsOpen = ref(false);
+// Alerts of drones no longer on the map can't be focused
+const present = computed(() => new Set(props.drones.map((d) => d.basic_id)));
+const alertTime = (t: number) =>
+  new Date(t).toLocaleTimeString([], { hour12: false });
 
 const expanded = ref<string | null>(null); // drone whose stats are shown
 // Recomputed on every poll (new drones array), so live values follow the flight
@@ -141,6 +150,41 @@ function doExport(id: string, f: ExportFormat) {
         </div>
       </li>
     </ul>
+
+    <button
+      class="header section"
+      :aria-expanded="alertsOpen"
+      @click="alertsOpen = !alertsOpen"
+    >
+      <span>Alerts ({{ alerts.length }})</span>
+    </button>
+    <div v-if="alertsOpen" class="alerts">
+      <div v-if="alerts.length" class="tools">
+        <button class="fmt" @click="exportAlerts(alerts)">Export CSV</button>
+        <button class="fmt" @click="emit('clearAlerts')">Clear</button>
+      </div>
+      <p v-else class="empty">No alerts</p>
+      <button
+        v-for="a in alerts"
+        :key="a.key"
+        class="alert-row"
+        :class="a.kind"
+        :disabled="!present.has(a.droneId)"
+        :title="
+          present.has(a.droneId)
+            ? new Date(a.time).toLocaleString()
+            : 'Drone is no longer on the map'
+        "
+        @click="emit('select', a.droneId)"
+      >
+        <span class="swatch" :style="{ background: colorFor(a.droneId) }" />
+        <span class="main">
+          <span class="text">{{ a.text }}</span>
+          <span class="id">{{ a.droneId }}</span>
+        </span>
+        <span class="age">{{ alertTime(a.time) }}</span>
+      </button>
+    </div>
 
   </section>
 </template>
@@ -319,6 +363,36 @@ button {
   padding: 8px 12px 8px 9px;
   background: #fff; /* also under a highlighted row */
   border-left: 3px solid; /* drone color, tells blocks apart in multi-drone files */
+}
+.section {
+  border-top: 1px solid #e5e7eb;
+}
+.alerts {
+  overflow-y: auto;
+  border-top: 1px solid #e5e7eb;
+}
+.tools {
+  display: flex;
+  gap: 6px;
+  padding: 6px 12px;
+}
+.alert-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+}
+.alert-row:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+.alert-row:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.alert-row.alert .text {
+  color: #b91c1c;
+  font-weight: 600;
 }
 .fmt:hover {
   background: #f3f4f6;

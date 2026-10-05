@@ -21,18 +21,30 @@ const detections = computed(() =>
   replay.fileName.value ? replay.detections.value : live.value,
 );
 // History keeps recording live drones even while a replay is shown
-const { getTrack } = useTrackHistory(live);
+const { getTrack, trackIds, loaded: historyLoaded } = useTrackHistory(live);
+
+// Draw recorded paths of drones still around (after a reload, or when a replay closes)
+function redrawLivePaths() {
+  const now = Date.now() / 1000;
+  for (const id of trackIds()) {
+    const pts = getTrack(id);
+    if (!pts.length || now - pts[pts.length - 1].t > STALE_SECONDS) continue;
+    mapView.value?.setPath(
+      id,
+      pts.map((p) => [p.lat, p.lng, p.t * 1000]),
+    );
+  }
+}
+historyLoaded.then(() => {
+  if (!replay.fileName.value) redrawLivePaths();
+});
 
 // After loading a file, focus its first drone as soon as it's on the map.
 // Closing a replay brings live drones back: redraw their paths from the recorded history
 let focusAfterLoad = false;
 watch(replay.tracks, (t) => {
   focusAfterLoad = t.length > 0;
-  if (t.length) return;
-  for (const id of Object.keys(live.value)) {
-    const pts = getTrack(id).map((p): [number, number] => [p.lat, p.lng]);
-    if (pts.length) mapView.value?.setPath(id, pts);
-  }
+  if (!t.length) redrawLivePaths();
 });
 watch(
   replay.detections,
@@ -68,7 +80,7 @@ const activeDrones = computed(() => {
   );
 });
 
-const { toasts, dismiss, push } = useToasts(activeDrones);
+const { toasts, dismiss, push, alerts, clearAlerts } = useToasts(activeDrones);
 const { zones, error: zonesError } = useZones();
 
 // Zones active right now. Re-checked every poll, but only replaced when the
@@ -169,7 +181,9 @@ function onExport(id: string, format: ExportFormat) {
     :following="following"
     :checks="checks"
     :stats-for="statsFor"
+    :alerts="alerts"
     @select="focusDrone"
+    @clear-alerts="clearAlerts"
     @follow="setFollow"
     @export="onExport"
   />

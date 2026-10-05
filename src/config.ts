@@ -2,6 +2,7 @@ export const POLL_MS = 1000;
 export const FADE_SECONDS = 10; // grey out drones without updates
 export const STALE_SECONDS = 60; // remove drones without updates
 export const TOAST_MS = 6000; // new-drone message lifetime
+export const GAP_SECONDS = 5; // longer without data: path drawn dashed (signal gap)
 
 // Drone zones (ANS UTM). Dev only, via the Vite proxy; disabled in production builds.
 export const ZONES_ENABLED = import.meta.env.DEV;

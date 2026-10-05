@@ -7,12 +7,13 @@ Live map of object positions from Remote ID detections, built with Vue 3, TypeSc
 ## Features
 
 - Polls detections every second and moves existing markers in place (no redraw flicker)
-- Object and pilot markers with flight paths (solid for objects, dashed for pilot)
+- Object and pilot markers with flight paths (solid for objects, dashed for pilot). Where no data arrived for more than 5 s (a signal gap), the object path is drawn as a thin dotted link
 - Distinct color per object
 - Expandable object list: click to focus, follow mode, per-object track export (GPX, KML, CSV; CSV includes the pilot position)
 - Flight stats per object: click an object in the list to show them under it
 - Popup with ID, RSSI, altitude and speed; copyable ID and coordinates
-- New object alerts
+- New object alerts, also kept in an alert log
+- Track history and the alert log are saved in the browser and survive page reloads
 - Fades objects after 10 s without updates, removes them after 60 s
 - Map, satellite map layers
 - Replay recorded tracks (CSV, GPX, KML) with play/pause, seek and speed control
@@ -23,6 +24,7 @@ Click an object in the list to open its flight stats; click it again to close th
 
 | Stat | Meaning |
 | --- | --- |
+| Altitude chart | Altitude over time with the 120 m limit; hover for time and altitude |
 | Max speed, Max alt | Highest recorded values |
 | Above 120 m | Time spent above the altitude limit |
 | Max from pilot | Farthest distance from the pilot. Shown as "Max from takeoff" when the track has no pilot position |
@@ -40,6 +42,14 @@ For live objects, stats are calculated from the history recorded since the objec
 For replayed tracks, stats cover the whole file.
 
 ![Replay flight stats](docs/images/replay-stats.jpg)
+
+## Alerts
+
+Every message shown as a pop-up (new object, prohibited zone entry, above 120 m) is also added to the **Alerts** section at the bottom of the object list, newest first. Click an alert to focus its object; alerts of objects no longer on the map are greyed out. The log can be exported as CSV or cleared. It keeps the last 500 alerts and is saved in the browser (`localStorage`).
+
+## Saved history
+
+Live track history is saved in the browser (IndexedDB) every 5 s, so exports and flight stats keep the full flight after a reload. Paths of objects still in the air are redrawn on the map. Tracks without updates for 24 hours are removed when the app starts. The history is stored per browser and is not shared between devices.
 
 ## Requirements
 
@@ -111,9 +121,9 @@ src/
   export.ts                       # GPX / KML / CSV export
   mock/detections.ts              # simulated objects
   composables/useDetections.ts    # 1 s polling
-  composables/useTrackHistory.ts  # track history for export and live flight stats
+  composables/useTrackHistory.ts  # track history (saved in IndexedDB) for export and live flight stats
   composables/useZones.ts         # zone loading and refresh
-  composables/useToasts.ts        # new object and zone alerts
+  composables/useToasts.ts        # new object and zone alerts, alert log
   composables/useReplay.ts        # replay playback, flight stats calculation
   replay/parse.ts                 # CSV / GPX / KML track parsing
   geo.ts                          # point-in-polygon helpers

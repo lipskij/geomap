@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import L from "leaflet";
-import type { Detection, Detections } from "../types";
+import type { Detection, Detections, PathPoint } from "../types";
 import { colorFor } from "../colors";
 import { copyText, esc } from "../export";
 import { validPos } from "../geo";
-import { FADE_SECONDS, MAX_ALT_M, STALE_SECONDS } from "../config";
+import { FADE_SECONDS, GAP_SECONDS, MAX_ALT_M, STALE_SECONDS } from "../config";
+import { REPLAY_PREFIX } from "../composables/useReplay";
 import {
   RESTRICTION_LABEL,
   type Restriction,
@@ -31,8 +32,10 @@ interface Track {
   pilot?: L.Marker;
   dronePopup: PopupView;
   pilotPopup: PopupView;
-  dronePath: L.Polyline;
+  dronePath: L.Polyline; // one line per stretch with data
+  gapPath: L.Polyline; // dashed links across signal gaps
   pilotPath: L.Polyline;
+  last?: PathPoint; // newest drone path point
 }
 
 const el = ref<HTMLDivElement>();
@@ -216,12 +219,46 @@ function appendPath(path: L.Polyline, pos: L.LatLngTuple) {
   if (!last || last.lat !== pos[0] || last.lng !== pos[1]) path.addLatLng(pos);
 }
 
+const GAP_MS = GAP_SECONDS * 1000;
+
+// Rebuild a drone path, breaking it into a dashed link wherever data stopped for a while
+function drawPath(t: Track, pts: PathPoint[]) {
+  const lines: L.LatLngTuple[][] = [[]];
+  const gaps: L.LatLngTuple[][] = [];
+  pts.forEach((p, i) => {
+    const prev = pts[i - 1];
+    if (prev && p[2] - prev[2] > GAP_MS) {
+      gaps.push([[prev[0], prev[1]], [p[0], p[1]]]);
+      lines.push([]);
+    }
+    lines[lines.length - 1].push([p[0], p[1]]);
+  });
+  t.dronePath.setLatLngs(lines);
+  t.gapPath.setLatLngs(gaps);
+  t.last = pts[pts.length - 1];
+}
+
+function appendDronePath(t: Track, p: PathPoint) {
+  const last = t.last;
+  t.last = p; // also when hovering in place, so the time keeps up
+  if (last && last[0] === p[0] && last[1] === p[1]) return;
+  const lines = t.dronePath.getLatLngs() as L.LatLng[][];
+  if (last && p[2] - last[2] > GAP_MS) {
+    const gaps = t.gapPath.getLatLngs() as L.LatLng[][];
+    gaps.push([L.latLng(last[0], last[1]), L.latLng(p[0], p[1])]);
+    t.gapPath.setLatLngs(gaps);
+    lines.push([L.latLng(p[0], p[1])]);
+    t.dronePath.setLatLngs(lines);
+  } else t.dronePath.addLatLng([p[0], p[1]], lines[lines.length - 1]);
+}
+
 function removeTrack(id: string) {
   const t = tracks.get(id);
   if (!t) return;
   t.drone?.remove();
   t.pilot?.remove();
   t.dronePath.remove();
+  t.gapPath.remove();
   t.pilotPath.remove();
   tracks.delete(id);
 }
@@ -251,10 +288,10 @@ function update(detections: Detections) {
     let t = tracks.get(id);
     if (!t) {
       t = {
-        dronePath: L.polyline(pendingPaths.get(id) ?? [], {
-          color,
-          weight: 3,
-        }).addTo(map),
+        dronePath: L.polyline([], { color, weight: 3 }).addTo(map),
+        gapPath: L.polyline([], { color, weight: 2, dashArray: "2,6" }).addTo(
+          map,
+        ),
         pilotPath: L.polyline([], { color, weight: 2, dashArray: "5,5" }).addTo(
           map,
         ),
@@ -262,6 +299,7 @@ function update(detections: Detections) {
         pilotPopup: createPopup("pilot"),
       };
       tracks.set(id, t);
+      drawPath(t, pendingPaths.get(id) ?? []);
       pendingPaths.delete(id);
     }
 
@@ -275,7 +313,9 @@ function update(detections: Detections) {
         d,
         props.checks[id],
       );
-      appendPath(t.dronePath, pos);
+      // Replayed paths are set by the replay (setPath), in recording time
+      if (!id.startsWith(REPLAY_PREFIX))
+        appendDronePath(t, [pos[0], pos[1], d.last_update * 1000]);
       if (id === props.following) followPos = pos;
       if (!zoomedToFirst) {
         zoomedToFirst = true;
@@ -293,6 +333,7 @@ function update(detections: Detections) {
     t.drone?.setOpacity(faded ? 0.4 : 1);
     t.pilot?.setOpacity(faded ? 0.4 : 1);
     t.dronePath.setStyle({ opacity: faded ? 0.3 : 1 });
+    t.gapPath.setStyle({ opacity: faded ? 0.3 : 0.8 });
     t.pilotPath.setStyle({ opacity: faded ? 0.3 : 1 });
   }
 
@@ -308,12 +349,12 @@ function focus(id: string): boolean {
   return true;
 }
 
-// Replace a drone's path (used by replay). If the drone isn't on the map yet, or the map
-// is mid-animation (redrawing then draws at the wrong offset), it's applied later.
-const pendingPaths = new Map<string, L.LatLngTuple[]>();
-function setPath(id: string, points: L.LatLngTuple[]) {
+// Replace a drone's path (replay, or live history after a reload). If the drone isn't on the
+// map yet, or the map is mid-animation (redrawing then draws at the wrong offset), it's applied later.
+const pendingPaths = new Map<string, PathPoint[]>();
+function setPath(id: string, points: PathPoint[]) {
   const t = tracks.get(id);
-  if (t && !moving) t.dronePath.setLatLngs(points);
+  if (t && !moving) drawPath(t, points);
   else pendingPaths.set(id, points);
 }
 
@@ -352,7 +393,7 @@ onMounted(() => {
     for (const [id, pts] of pendingPaths) {
       const t = tracks.get(id);
       if (!t) continue;
-      t.dronePath.setLatLngs(pts);
+      drawPath(t, pts);
       pendingPaths.delete(id);
     }
     if (pending) {

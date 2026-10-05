@@ -11,5 +11,8 @@ export interface Detection {
   last_update: number; // unix seconds
 }
 
+// Map path point: lat, lng, time in ms
+export type PathPoint = [number, number, number];
+
 // Keyed by basic_id
 export type Detections = Record<string, Detection>;

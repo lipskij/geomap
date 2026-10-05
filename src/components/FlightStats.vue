@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
+import { colorFor } from "../colors";
 import { copyText } from "../export";
 import { MAX_ALT_M } from "../config";
 import { fmtDuration, type TrackStats } from "../composables/useReplay";
@@ -22,6 +23,37 @@ function positions() {
   return list;
 }
 
+// Altitude chart: SVG in a fixed viewBox stretched to the card width
+const W = 300;
+const H = 48;
+const chart = computed(() => {
+  const p = props.s.altProfile;
+  if (p.length < 2) return null;
+  const t0 = p[0][0];
+  const span = p[p.length - 1][0] - t0 || 1;
+  const top = Math.max(props.s.maxAlt, MAX_ALT_M) * 1.15;
+  const x = (t: number) => ((t - t0) / span) * W;
+  const y = (alt: number) => H - (Math.max(0, alt) / top) * H;
+  return {
+    line: p.map(([t, a]) => `${x(t).toFixed(1)},${y(a).toFixed(1)}`).join(" "),
+    limitY: y(MAX_ALT_M),
+    x,
+    y,
+  };
+});
+const hover = ref<number | null>(null); // index into altProfile
+
+function onMove(e: PointerEvent) {
+  const p = props.s.altProfile;
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const t = p[0][0] + ((e.clientX - rect.left) / rect.width) * (p[p.length - 1][0] - p[0][0]);
+  let best = 0;
+  p.forEach(([pt], i) => {
+    if (Math.abs(pt - t) < Math.abs(p[best][0] - t)) best = i;
+  });
+  hover.value = best;
+}
+
 async function copy(key: string, text: string) {
   await copyText(text);
   copied.value = key;
@@ -30,6 +62,47 @@ async function copy(key: string, text: string) {
 </script>
 
 <template>
+  <div v-if="chart" class="alt">
+    <div class="alt-head">
+      <span>Altitude</span>
+      <span v-if="hover !== null">
+        {{ clock(s.altProfile[hover][0]) }} ·
+        {{ Math.round(s.altProfile[hover][1]) }} m
+      </span>
+    </div>
+    <div class="plot" @pointermove="onMove" @pointerleave="hover = null">
+      <svg
+        :viewBox="`0 0 ${W} ${H}`"
+        preserveAspectRatio="none"
+        role="img"
+        :aria-label="`Altitude over time, max ${Math.round(s.maxAlt)} m`"
+      >
+        <line class="base" x1="0" :y1="H" :x2="W" :y2="H" />
+        <line class="limit" x1="0" :y1="chart.limitY" :x2="W" :y2="chart.limitY" />
+        <polyline :points="chart.line" :stroke="colorFor(s.id)" />
+        <line
+          v-if="hover !== null"
+          class="cross"
+          :x1="chart.x(s.altProfile[hover][0])"
+          y1="0"
+          :x2="chart.x(s.altProfile[hover][0])"
+          :y2="H"
+        />
+      </svg>
+      <span class="limit-label" :style="{ top: `${(chart.limitY / H) * 100}%` }">
+        {{ MAX_ALT_M }} m
+      </span>
+      <span
+        v-if="hover !== null"
+        class="dot"
+        :style="{
+          left: `${(chart.x(s.altProfile[hover][0]) / W) * 100}%`,
+          top: `${(chart.y(s.altProfile[hover][1]) / H) * 100}%`,
+          background: colorFor(s.id),
+        }"
+      />
+    </div>
+  </div>
   <dl>
     <dt>Max speed</dt>
     <dd>{{ (s.maxSpeed * 3.6).toFixed(0) }} km/h</dd>
@@ -78,6 +151,68 @@ async function copy(key: string, text: string) {
 </template>
 
 <style scoped>
+.alt {
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.alt-head {
+  display: flex;
+  justify-content: space-between;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+.plot {
+  position: relative;
+  height: 48px;
+  margin-top: 2px;
+  touch-action: none; /* drag on touch screens scrubs instead of scrolling */
+}
+.plot svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.plot line,
+.plot polyline {
+  vector-effect: non-scaling-stroke;
+  fill: none;
+}
+.plot polyline {
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.base {
+  stroke: #e5e7eb;
+  stroke-width: 1;
+}
+.limit {
+  stroke: #b91c1c;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.cross {
+  stroke: #9ca3af;
+  stroke-width: 1;
+}
+.limit-label {
+  position: absolute;
+  right: 0;
+  transform: translateY(-100%);
+  font-size: 10px;
+  line-height: 1.2;
+  color: #b91c1c;
+  pointer-events: none;
+}
+.dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #fff;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
 dl {
   display: grid;
   grid-template-columns: auto 1fr;
