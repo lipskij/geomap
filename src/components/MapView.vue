@@ -333,12 +333,13 @@ function update(detections: Detections) {
   if (followPos) map.panTo(followPos, { animate: true, duration: 0.5 });
 }
 
-// Pan/zoom to a drone and open its popup
-function focus(id: string) {
+// Pan/zoom to a drone and open its popup. Returns false if the drone isn't on the map yet.
+function focus(id: string): boolean {
   const m = tracks.get(id)?.drone;
-  if (!map || !m) return;
+  if (!map || !m) return false;
   map.once("moveend", () => m.openPopup()); // opening mid-flight triggers autoPan
   map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 16), { duration: 0.6 });
+  return true;
 }
 
 // Replace a drone's path (used by replay). If the drone isn't on the map yet, or the map
