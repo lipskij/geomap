@@ -47,7 +47,7 @@ function fmt(ms: number): string {
     />
 
     <button v-if="!fileName" class="open" @click="input?.click()">
-      ⏵ Replay a track (CSV, GPX, KML)
+      Import and replay a track (CSV, GPX, KML)
     </button>
 
     <template v-else>
