@@ -30,9 +30,17 @@ const detections = computed(() =>
 // History keeps recording live drones even while a replay is shown
 const { getTrack } = useTrackHistory(live);
 
-// After loading a file, focus its first drone as soon as it's on the map
+// After loading a file, focus its first drone as soon as it's on the map.
+// Closing a replay brings live drones back: redraw their paths from the recorded history
 let focusAfterLoad = false;
-watch(replay.tracks, (t) => (focusAfterLoad = t.length > 0));
+watch(replay.tracks, (t) => {
+  focusAfterLoad = t.length > 0;
+  if (t.length) return;
+  for (const id of Object.keys(live.value)) {
+    const pts = getTrack(id).map((p): [number, number] => [p.lat, p.lng]);
+    if (pts.length) mapView.value?.setPath(id, pts);
+  }
+});
 watch(
   replay.detections,
   (dets) => {
@@ -42,15 +50,6 @@ watch(
   },
   { flush: "post" }, // after the map has drawn the drone
 );
-
-// Closing a replay brings live drones back: redraw their paths from the recorded history
-watch(replay.tracks, (t) => {
-  if (t.length) return;
-  for (const id of Object.keys(live.value)) {
-    const pts = getTrack(id).map((p): [number, number] => [p.lat, p.lng]);
-    if (pts.length) mapView.value?.setPath(id, pts);
-  }
-});
 
 // Replayed paths follow the recorded points up to the current time (also after seeking
 // and at high speed), instead of joining sampled positions with straight lines
