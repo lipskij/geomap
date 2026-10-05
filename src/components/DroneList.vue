@@ -228,10 +228,6 @@ button {
   text-overflow: ellipsis;
   max-width: 100%;
 }
-.badge.authorised {
-  background: #dbeafe;
-  color: #1e40af;
-}
 .badge.alert {
   background: #fee2e2;
   color: #b91c1c;

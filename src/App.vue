@@ -9,12 +9,7 @@ import { useDetections } from "./composables/useDetections";
 import { useTrackHistory } from "./composables/useTrackHistory";
 import { useToasts } from "./composables/useToasts";
 import { useZones } from "./composables/useZones";
-import { usePlans } from "./composables/usePlans";
 import { useActiveSubset } from "./composables/useActiveSubset";
-import { activeVolumes, isPlanActive } from "./plans";
-import { inPolygon } from "./geo";
-import { USE_MOCK } from "./api";
-import { setDemoArea } from "./mock/detections";
 import { checkPosition, isZoneActive, type ZoneCheck } from "./zones";
 import { exportTrack, type ExportFormat } from "./export";
 import {
@@ -55,9 +50,8 @@ const activeDrones = computed(() => {
 
 const { toasts, dismiss, push } = useToasts(activeDrones);
 const { zones, error: zonesError } = useZones();
-const { plans, error: plansError, loaded: plansLoaded } = usePlans();
 
-// Zones / flight plans active right now. Re-checked every poll, but only replaced when the
+// Zones active right now. Re-checked every poll, but only replaced when the
 // set changes, so the map doesn't redraw these layers every second.
 const activeZones = useActiveSubset(
   zones,
@@ -65,17 +59,10 @@ const activeZones = useActiveSubset(
   (z) => isZoneActive(z),
   (z) => z.id,
 );
-const activePlans = useActiveSubset(
-  plans,
-  detections,
-  (p) => isPlanActive(p),
-  (p) => `${p.id}:${p.state}:${activeVolumes(p).length}`,
-);
 
-// Per-drone zone / altitude / flight plan status (only when zone data is available)
+// Per-drone zone / altitude status (only when zone data is available)
 const checks = computed<Record<string, ZoneCheck>>(() => {
   if (!ZONES_ENABLED || !activeZones.value.length) return {};
-  const planData = plansLoaded.value ? activePlans.value : null;
   const out: Record<string, ZoneCheck> = {};
   for (const d of activeDrones.value) {
     out[d.basic_id] = checkPosition(
@@ -84,24 +71,17 @@ const checks = computed<Record<string, ZoneCheck>>(() => {
       d.drone_altitude,
       activeZones.value,
       MAX_ALT_M,
-      planData,
     );
   }
   return out;
 });
 
-// Alert when a drone without an approved plan enters a prohibited zone or goes above the altitude limit
+// Alert when a drone enters a prohibited zone or goes above the altitude limit
 const lastAlert = new Map<string, string>();
 watch(checks, (all) => {
   for (const [id, c] of Object.entries(all)) {
     const prohibited = c.zones.find((z) => z.restriction === "PROHIBITED");
-    const key = c.plan
-      ? ""
-      : prohibited
-        ? `p:${prohibited.id}`
-        : c.aboveMax
-          ? "above"
-          : "";
+    const key = prohibited ? `p:${prohibited.id}` : c.aboveMax ? "above" : "";
     if (key && key !== lastAlert.get(id)) {
       push(
         id,
@@ -114,27 +94,6 @@ watch(checks, (all) => {
     lastAlert.set(id, key);
   }
 });
-
-// Mock mode only: fly a demo drone inside the first active approved plan, so the
-// "Approved plan" status can be shown without real receivers.
-if (USE_MOCK && ZONES_ENABLED) {
-  watch(activePlans, (list) => {
-    for (const plan of list) {
-      if (!plan.approved) continue;
-      const v = activeVolumes(plan)[0];
-      const [minLng, minLat, maxLng, maxLat] = v.bbox;
-      const lat = (minLat + maxLat) / 2;
-      const lng = (minLng + maxLng) / 2;
-      if (!inPolygon(lng, lat, v.rings, v.bbox)) continue;
-      const radius =
-        Math.min((maxLat - minLat) / 2, (maxLng - minLng) / 2 / 1.7) * 0.4;
-      const alt = Math.round(Math.max(v.minM + 5, Math.min(v.maxM - 10, 60)));
-      setDemoArea({ lat, lng, radius, alt });
-      return;
-    }
-    setDemoArea(null);
-  });
-}
 
 // Stop following a drone that has disappeared
 watch(activeDrones, (list) => {
@@ -164,14 +123,10 @@ function onExport(id: string, format: ExportFormat) {
   <p v-else-if="zonesError" class="error">
     Failed to load drone zones: {{ zonesError }}
   </p>
-  <p v-else-if="plansError" class="error">
-    Failed to load flight plans: {{ plansError }}
-  </p>
   <MapView
     ref="mapView"
     :detections="detections"
     :zones="activeZones"
-    :plans="activePlans"
     :checks="checks"
     :following="following"
     :fade-seconds="FADE_SECONDS"

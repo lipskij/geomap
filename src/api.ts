@@ -1,7 +1,7 @@
 import type { Detections } from './types'
 import { getMockDetections } from './mock/detections'
 
-export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
+const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
 
 export async function fetchDetections(): Promise<Detections> {
   if (USE_MOCK) return getMockDetections()

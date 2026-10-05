@@ -1,12 +1,6 @@
 // Drone zones from the ANS UTM map API (GeoJSON with ED-269 style properties)
 
 import { bboxOf, inPolygon, type BBox, type Rings } from "./geo";
-import {
-  matchPlan,
-  planName,
-  type OperationPlan,
-  type PlanMatch,
-} from "./plans";
 
 export type Restriction = "PROHIBITED" | "REQ_AUTHORISATION" | "NO_RESTRICTION";
 
@@ -39,14 +33,13 @@ interface Applicability {
   schedule?: Schedule[];
 }
 
-export type CheckLevel = "ok" | "authorised" | "info" | "warn" | "alert";
+export type CheckLevel = "ok" | "info" | "warn" | "alert";
 
 export interface ZoneCheck {
   level: CheckLevel;
   label: string; // short summary of the most severe issue
   zones: Zone[]; // zones the drone is inside (horizontally and vertically)
   aboveMax: boolean;
-  plan?: PlanMatch; // approved flight plan the drone is flying inside
 }
 
 export const RESTRICTION_LABEL: Record<Restriction, string> = {
@@ -69,7 +62,6 @@ const LEVEL: Record<Restriction, CheckLevel> = {
 };
 const RANK: Record<CheckLevel, number> = {
   ok: 0,
-  authorised: 0,
   info: 1,
   warn: 2,
   alert: 3,
@@ -153,15 +145,13 @@ export function isZoneActive(z: Zone, now = new Date()): boolean {
 
 // ---- Check ----
 
-// altM is treated as height above ground (zone limits are AGL).
-// plans: approved-plan data, or null when it isn't available (then no "No plan" wording).
+// altM is treated as height above ground (zone limits are AGL)
 export function checkPosition(
   lat: number,
   lng: number,
   altM: number,
   zones: Zone[],
   maxAltM: number,
-  plans: OperationPlan[] | null = null,
 ): ZoneCheck {
   const hits = zones
     .filter(
@@ -172,29 +162,12 @@ export function checkPosition(
     )
     .sort((a, b) => RANK[LEVEL[b.restriction]] - RANK[LEVEL[a.restriction]]);
   const aboveMax = altM > maxAltM;
-  const plan = plans ? matchPlan(lat, lng, altM, plans) : undefined;
-
-  // Inside an approved plan (area, time and height): treat as authorised
-  if (plan) {
-    return {
-      level: "authorised",
-      label: `Approved plan · ${planName(plan.plan)}`,
-      zones: hits,
-      aboveMax,
-      plan,
-    };
-  }
 
   let level: CheckLevel = "ok";
   let label = "No zone";
   if (hits.length) {
-    const top = hits[0];
-    level = LEVEL[top.restriction];
-    const prefix =
-      top.restriction === "REQ_AUTHORISATION" && plans
-        ? "No plan"
-        : SHORT_LABEL[top.restriction];
-    label = `${prefix} · ${top.name}`;
+    level = LEVEL[hits[0].restriction];
+    label = `${SHORT_LABEL[hits[0].restriction]} · ${hits[0].name}`;
   }
   if (aboveMax && RANK[level] < RANK.warn) {
     level = "warn";

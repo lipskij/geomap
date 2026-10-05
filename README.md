@@ -87,7 +87,6 @@ src/
   composables/useDetections.ts    # 1 s polling
   composables/useTrackHistory.ts  # track history for export
   composables/useToasts.ts        # new object and zone alerts
-  composables/usePlans.ts         # loads flight plans (dev only)
   composables/useReplay.ts        # replay playback
   replay/parse.ts                 # CSV / GPX / KML track parsing
   geo.ts                          # point-in-polygon helpers

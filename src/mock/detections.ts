@@ -49,20 +49,6 @@ const M_PER_DEG_LAT = 111_320;
 const start = Date.now() / 1000;
 const lastSeen: Record<string, number> = {};
 
-// Demo drone flying inside an approved flight plan area (set from App in dev, see setDemoArea)
-export interface DemoArea {
-  lat: number;
-  lng: number;
-  radius: number; // degrees latitude
-  alt: number; // m above ground
-}
-const DEMO_ID = "1581F7PLANDEMO000001";
-let demo: DemoArea | null = null;
-
-export function setDemoArea(area: DemoArea | null) {
-  demo = area;
-}
-
 export function getMockDetections(): Detections {
   const now = Date.now() / 1000;
   const t = now - start;
@@ -87,20 +73,6 @@ export function getMockDetections(): Detections {
       last_update: lastSeen[d.basic_id],
     };
     out[d.basic_id] = det;
-  }
-  if (demo) {
-    const a = 0.1 * t;
-    out[DEMO_ID] = {
-      basic_id: DEMO_ID,
-      rssi: -55 - Math.round(Math.random() * 20),
-      drone_lat: demo.lat + demo.radius * Math.sin(a),
-      drone_long: demo.lng + demo.radius * 1.7 * Math.cos(a),
-      drone_altitude: demo.alt,
-      drone_speed: demo.radius * M_PER_DEG_LAT * 0.1,
-      pilot_lat: demo.lat,
-      pilot_long: demo.lng,
-      last_update: now,
-    };
   }
 
   return out;

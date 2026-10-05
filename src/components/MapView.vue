@@ -9,19 +9,11 @@ import {
   type Zone,
   type ZoneCheck,
 } from "../zones";
-import {
-  activeVolumes,
-  planName,
-  STATE_LABEL,
-  type OperationPlan,
-  type PlanVolume,
-} from "../plans";
 
 const props = withDefaults(
   defineProps<{
     detections: Detections;
     zones?: Zone[];
-    plans?: OperationPlan[];
     checks?: Record<string, ZoneCheck>;
     following?: string | null;
     fadeSeconds?: number;
@@ -29,7 +21,6 @@ const props = withDefaults(
   }>(),
   {
     zones: () => [],
-    plans: () => [],
     checks: () => ({}),
     following: null,
     fadeSeconds: 10,
@@ -59,7 +50,6 @@ let moving = false; // true while the map is panning/zooming
 let pending: Detections | null = null; // latest data received mid-move
 let layersControl: L.Control.Layers | null = null;
 let zonesLayer: L.GeoJSON | null = null;
-let plansLayer: L.GeoJSON | null = null;
 const tracks = new Map<string, Track>();
 
 function droneIcon(color: string): L.DivIcon {
@@ -169,18 +159,9 @@ function renderZones(el: HTMLElement, check?: ZoneCheck) {
     return;
   }
   el.style.display = "";
-  const rows: string[] = [];
-  if (check.plan) {
-    const { plan, volume } = check.plan;
-    rows.push(
-      `<div class="zrow approved">Approved plan · <b>${esc(planName(plan))}</b> · ${timeRange(volume)} · ${volume.minM}–${volume.maxM} m</div>`,
-    );
-  }
-  rows.push(
-    ...check.zones.map(
-      (z) =>
-        `<div class="zrow ${z.restriction}">${esc(RESTRICTION_LABEL[z.restriction])} · <b>${esc(z.name)}</b> · ${z.lowerM}–${z.upperM} m</div>`,
-    ),
+  const rows = check.zones.map(
+    (z) =>
+      `<div class="zrow ${z.restriction}">${esc(RESTRICTION_LABEL[z.restriction])} · <b>${esc(z.name)}</b> · ${z.lowerM}–${z.upperM} m</div>`,
   );
   if (check.aboveMax)
     rows.push('<div class="zrow above">Above 120 m limit</div>');
@@ -216,53 +197,6 @@ function zonePopup(z: Zone): string {
     <div>${when}</div>
     ${z.message ? `<div class="zmsg">${esc(z.message)}</div>` : ""}
   </div>`;
-}
-
-const hhmm = (ms: number) =>
-  new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-const timeRange = (v: PlanVolume) => `${hhmm(v.begin)}–${hhmm(v.end)}`;
-
-// Approved plans: solid blue; proposed (not yet approved): dashed grey
-const planStyle = (approved: boolean): L.PathOptions =>
-  approved
-    ? { color: "#2563eb", weight: 2, fillOpacity: 0.12 }
-    : { color: "#6b7280", weight: 1.5, fillOpacity: 0.04, dashArray: "6,4" };
-
-function planPopup(plan: OperationPlan, v: PlanVolume): string {
-  return `<div class="rid-popup">
-    <b>${esc(planName(plan))}</b>
-    <div>Flight plan · ${esc(STATE_LABEL[plan.state] ?? plan.state)}</div>
-    <div>${timeRange(v)} · ${v.minM}–${v.maxM} m AGL</div>
-    <div>${v.bvlos ? "BVLOS" : "VLOS"}</div>
-  </div>`;
-}
-
-function renderPlanLayer(plans: OperationPlan[]) {
-  if (!map) return;
-  if (!plansLayer) {
-    map.createPane("plans").style.zIndex = "360"; // above zones, below drone paths
-    const opts: L.GeoJSONOptions & { renderer: L.Renderer } = {
-      pane: "plans",
-      renderer: L.svg({ pane: "plans", padding: 2 }),
-      style: (f) => planStyle(f?.properties.plan.approved),
-      onEachFeature: (f, layer) =>
-        layer.bindPopup(planPopup(f.properties.plan, f.properties.volume), {
-          maxWidth: 320,
-        }),
-    };
-    plansLayer = L.geoJSON(undefined, opts).addTo(map);
-    layersControl?.addOverlay(plansLayer, "Flight plans");
-  }
-  plansLayer.clearLayers();
-  for (const plan of plans) {
-    for (const volume of activeVolumes(plan)) {
-      plansLayer.addData({
-        type: "Feature",
-        geometry: { type: "Polygon", coordinates: volume.rings },
-        properties: { plan, volume },
-      } as GeoJSON.Feature);
-    }
-  }
 }
 
 function renderZoneLayer(zones: Zone[]) {
@@ -442,7 +376,6 @@ onMounted(() => {
     })
     .addTo(map);
   if (props.zones.length) renderZoneLayer(props.zones);
-  if (props.plans.length) renderPlanLayer(props.plans);
   map.on("dragstart", () => {
     if (props.following) emit("unfollow"); // manual pan cancels follow
   });
@@ -466,7 +399,6 @@ onMounted(() => {
 
 watch(() => props.detections, update);
 watch(() => props.zones, renderZoneLayer);
-watch(() => props.plans, renderPlanLayer);
 
 onBeforeUnmount(() => {
   tracks.clear();
@@ -534,10 +466,6 @@ onBeforeUnmount(() => {
 :deep(.rid-popup .zrow.above) {
   border-color: #d97706;
   color: #92400e;
-}
-:deep(.rid-popup .zrow.approved) {
-  border-color: #2563eb;
-  color: #1e40af;
 }
 :deep(.rid-popup .zrow.ok) {
   border-color: #16a34a;
