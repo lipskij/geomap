@@ -9,12 +9,37 @@ Live map of object positions from Remote ID detections, built with Vue 3, TypeSc
 - Polls detections every second and moves existing markers in place (no redraw flicker)
 - Object and pilot markers with flight paths (solid for objects, dashed for pilot)
 - Distinct color per object
-- Expandable object list: click to focus, follow mode, per-object track export (GPX, KML, CSV)
+- Expandable object list: click to focus, follow mode, per-object track export (GPX, KML, CSV; CSV includes the pilot position)
+- Flight stats per object: click an object in the list to show them under it
 - Popup with ID, RSSI, altitude and speed; copyable ID and coordinates
 - New object alerts
 - Fades objects after 10 s without updates, removes them after 60 s
 - Map, satellite map layers
 - Replay recorded tracks (CSV, GPX, KML) with play/pause, seek and speed control
+
+## Flight stats
+
+Click an object in the list to open its flight stats; click it again to close them.
+
+| Stat | Meaning |
+| --- | --- |
+| Max speed, Max alt | Highest recorded values |
+| Above 120 m | Time spent above the altitude limit |
+| Max from pilot | Farthest distance from the pilot. Shown as "Max from takeoff" when the track has no pilot position |
+| Distance | Total distance flown |
+| Prohibited entries | Number of entries into prohibited zones, with the time spent in each zone. Shows "–" when zone data isn't loaded |
+| Started, Ended | Local time of the first and last recorded point (full date on hover) |
+| Flight time | Time between the first and last point |
+| Longest signal gap | Longest time between two recorded points |
+| Start pos, End pos, Pilot pos | Coordinates, with a copy button |
+
+For live objects, stats are calculated from the history recorded since the object was first seen. They update with every poll. Ended and End pos are not shown because the flight is still in progress.
+
+![Live flight stats](docs/images/live-stats.jpg)
+
+For replayed tracks, stats cover the whole file.
+
+![Replay flight stats](docs/images/replay-stats.jpg)
 
 ## Requirements
 
@@ -36,10 +61,10 @@ npm run dev
   "1581F5FJD239C00A1B2C": {
     "basic_id": "1581F5FJD239C00A1B2C",
     "rssi": -62,
-    "d_lat": 54.6875,
-    "d_long": 25.2864,
-    "d_altitude": 84,
-    "d_speed": 13.4,
+    "drone_lat": 54.6875,
+    "drone_long": 25.2864,
+    "drone_altitude": 84,
+    "drone_speed": 13.4,
     "pilot_lat": 54.6872,
     "pilot_long": 25.2797,
     "last_update": 1790000000
@@ -47,11 +72,11 @@ npm run dev
 }
 ```
 
-| Field         | Unit               |
-| ------------- | ------------------ |
-| `d_altitude`  | m                  |
-| `d_speed`     | m/s, horizontal    |
-| `last_update` | Unix time, seconds |
+| Field            | Unit               |
+| ---------------- | ------------------ |
+| `drone_altitude` | m                  |
+| `drone_speed`    | m/s, horizontal    |
+| `last_update`    | Unix time, seconds |
 
 ## Real data
 
@@ -69,6 +94,7 @@ When running `npm run dev`, the app loads Lithuanian UAS geographical zones from
 - checks each object: inside a zone horizontally and between the zone's lower and upper limit
 - flags objects above 120 m
 - alerts when an object enters a prohibited zone or goes above 120 m
+- counts prohibited zone entries in the flight stats
 
 Only zones active at the current time are used; zones reload every 5 minutes. Altitude is treated as height above ground, since all zone limits are AGL.
 
@@ -85,14 +111,16 @@ src/
   export.ts                       # GPX / KML / CSV export
   mock/detections.ts              # simulated objects
   composables/useDetections.ts    # 1 s polling
-  composables/useTrackHistory.ts  # track history for export
+  composables/useTrackHistory.ts  # track history for export and live flight stats
+  composables/useZones.ts         # zone loading and refresh
   composables/useToasts.ts        # new object and zone alerts
-  composables/useReplay.ts        # replay playback
+  composables/useReplay.ts        # replay playback, flight stats calculation
   replay/parse.ts                 # CSV / GPX / KML track parsing
   geo.ts                          # point-in-polygon helpers
   zones.ts                        # zone parsing, active times, zone/altitude check
   components/MapView.vue          # Leaflet map, markers, paths
   components/DroneList.vue        # object list
+  components/FlightStats.vue      # flight stats under a list item
   components/ToastStack.vue       # alert messages
   components/ReplayPanel.vue      # replay controls
   App.vue
