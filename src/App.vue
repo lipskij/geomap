@@ -43,6 +43,15 @@ watch(
   { flush: "post" }, // after the map has drawn the drone
 );
 
+// Closing a replay brings live drones back: redraw their paths from the recorded history
+watch(replay.tracks, (t) => {
+  if (t.length) return;
+  for (const id of Object.keys(live.value)) {
+    const pts = getTrack(id).map((p): [number, number] => [p.lat, p.lng]);
+    if (pts.length) mapView.value?.setPath(id, pts);
+  }
+});
+
 // Replayed paths follow the recorded points up to the current time (also after seeking
 // and at high speed), instead of joining sampled positions with straight lines
 watch(replay.detections, () => {
