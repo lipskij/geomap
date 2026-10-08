@@ -2,6 +2,8 @@ import type { Detection, Detections } from './types'
 import { getMockDetections } from './mock/detections'
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
+// Backend origin, e.g. https://api.example.com; empty = same origin as the app
+const API_URL = import.meta.env.VITE_API_URL ?? ''
 
 // One decoded Remote ID frame as the receiver sends it (ESP32 id_open JSON)
 interface RawDetection {
@@ -13,10 +15,11 @@ interface RawDetection {
   'uav speed': number
   'base latitude': number
   'base longitude': number
-  'unix time': number
+  'unix time': number // drone's own clock: often wrong or unset, so not used
+  received?: number // unix seconds when the receiver got the frame (added by the backend)
 }
 
-export function toDetection(r: RawDetection): Detection {
+export function toDetection(r: RawDetection, now = Date.now() / 1000): Detection {
   return {
     basic_id: r['uav id'],
     rssi: r.rssi,
@@ -26,13 +29,15 @@ export function toDetection(r: RawDetection): Detection {
     drone_speed: r['uav speed'],
     pilot_lat: r['base latitude'],
     pilot_long: r['base longitude'],
-    last_update: r['unix time'],
+    // ponytail: falls back to browser time until the backend sends `received`;
+    // then a drone the backend keeps returning never goes stale here
+    last_update: r.received ?? now,
   }
 }
 
 export async function fetchDetections(): Promise<Detections> {
   if (USE_MOCK) return getMockDetections()
-  const res = await fetch('/api/detections')
+  const res = await fetch(`${API_URL}/api/detections`)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const body: RawDetection | RawDetection[] = await res.json()
   const raws = Array.isArray(body) ? body : [body]

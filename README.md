@@ -77,7 +77,8 @@ npm run dev
   "uav speed": 0,
   "base latitude": 51.4790,
   "base longitude": -0.0010,
-  "unix time": 1574357589
+  "unix time": 1574357589,
+  "received": 1790000000
 }
 ```
 
@@ -88,17 +89,31 @@ npm run dev
 | `uav altitude`                      | `drone_altitude`            | m                  |
 | `uav speed`                         | `drone_speed`               | m/s, horizontal    |
 | `base latitude` / `base longitude`  | `pilot_lat` / `pilot_long`  | degrees            |
-| `unix time`                         | `last_update`               | Unix time, seconds |
+| `received`                          | `last_update`               | Unix time, seconds |
 
-Other fields (`mac`, `operator`, `self id`, `uav heading`, `seconds`, auth pages) are ignored for now.
+Other fields (`unix time`, `mac`, `operator`, `self id`, `uav heading`, `seconds`, auth pages) are ignored for now.
 
 ## Real data
 
-Mock data is on by default. To read from a real `/api/detections` on the same origin:
+Mock data is on by default. Settings (environment variables at build / dev time):
+
+| Variable        | Meaning                                                              |
+| --------------- | -------------------------------------------------------------------- |
+| `VITE_USE_MOCK` | `false` reads the real API                                           |
+| `VITE_API_URL`  | backend origin, e.g. `https://api.example.com`; empty = same origin  |
+| `API_TARGET`    | dev only: Vite forwards `/api/*` to this backend                     |
 
 ```bash
-VITE_USE_MOCK=false npm run build
+# local dev against a backend on port 8000
+VITE_USE_MOCK=false API_TARGET=http://localhost:8000 npm run dev
+
+# build for a backend on another domain (it must allow CORS from the app's origin)
+VITE_USE_MOCK=false VITE_API_URL=https://api.example.com npm run build
 ```
+
+GitHub Pages builds read `VITE_USE_MOCK` and `VITE_API_URL` from the repository variables (Settings → Secrets and variables → Actions → Variables). Without them the deployed site keeps using mock data.
+
+Each response must list every drone currently seen (latest frame per drone): a drone missing from a response is dropped from the map. `received` (Unix seconds, set by the backend when the frame arrived) is used as the drone's last-seen time; the drone's own `unix time` is ignored because drone clocks are often wrong. Until the backend sends `received`, the browser's time is used.
 
 ## Drone zones (local only)
 
