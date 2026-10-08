@@ -163,6 +163,7 @@ async function onImport(e: Event) {
       <div v-if="overlap !== null" class="legend">
         <span><i class="two" />{{ t("plan.overlap2") }}</span>
         <span><i class="three" />{{ t("plan.overlap3") }}</span>
+        <span><i class="hidden" />{{ t("plan.hidden") }}</span>
       </div>
     </div>
 
@@ -358,6 +359,9 @@ async function onImport(e: Event) {
 }
 .legend .three {
   background: rgba(24, 160, 80, 0.6);
+}
+.legend .hidden {
+  background: rgba(90, 90, 90, 0.6);
 }
 .meta {
   font-size: 11px;

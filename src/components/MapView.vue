@@ -10,6 +10,7 @@ import { REPLAY_PREFIX } from "../composables/useReplay";
 import type { Restriction, Zone, ZoneCheck } from "../zones";
 import { rangeOf, SENSOR_TYPES, type Sensor, type SensorType } from "../composables/useSensors";
 import { overlapImage } from "../coverage";
+import { elevation, loadTerrain } from "../terrain";
 import { lang, t, type MsgKey } from "../i18n";
 import { ICONS, type IconName } from "../icons";
 
@@ -89,17 +90,30 @@ const tracks = new Map<string, Track>();
 const sensorLayers = new Map<number, { marker: L.Marker; circle: L.Circle }>();
 let overlapLayer: L.ImageOverlay | null = null;
 
-// Shaded overlap of coverage circles (planner only), redrawn when the plan changes
-function drawOverlap() {
+// Shaded overlap of coverage circles (planner only), redrawn when the plan changes.
+// Terrain is loaded first so hills can cut the coverage
+let overlapRun = 0;
+async function drawOverlap() {
+  const run = ++overlapRun;
+  if (!map || !props.planning || !props.overlap) {
+    overlapLayer?.remove();
+    overlapLayer = null;
+    return;
+  }
+  const pick = props.overlap;
+  const circles = props.sensors
+    .filter((s) => pick === "all" || s.type === pick)
+    .map((s) => ({ lat: s.lat, lng: s.lng, range: rangeOf(s) }));
+  await loadTerrain(
+    circles.map((c) => {
+      const b = L.latLng(c.lat, c.lng).toBounds(c.range * 2);
+      return [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()];
+    }),
+  );
+  if (run !== overlapRun || !map) return; // plan changed while tiles loaded
   overlapLayer?.remove();
   overlapLayer = null;
-  if (!map || !props.planning || !props.overlap) return;
-  const pick = props.overlap;
-  const img = overlapImage(
-    props.sensors
-      .filter((s) => pick === "all" || s.type === pick)
-      .map((s) => ({ lat: s.lat, lng: s.lng, range: rangeOf(s) })),
-  );
+  const img = overlapImage(circles, elevation);
   if (!img) return;
   overlapLayer = L.imageOverlay(img.url, img.bounds, {
     opacity: 1,
