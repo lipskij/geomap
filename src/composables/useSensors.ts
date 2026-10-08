@@ -2,7 +2,7 @@ import { ref, watch } from "vue";
 import type { IconName } from "../icons";
 import { loadLocal, loadRemote, savePlan } from "../plans";
 
-export type SensorType = "rid" | "audio" | "video" | "thermal";
+export type SensorType = "rid" | "audio" | "video";
 
 export interface Sensor {
   id: number;
@@ -22,7 +22,6 @@ export const SENSOR_TYPES: Record<SensorType, { icon: IconName; color: string; r
   rid: { icon: "sensors", color: "#1f7ae0", range: 1000 },
   audio: { icon: "mic", color: "#8e44ad", range: 300 },
   video: { icon: "videocam", color: "#0f9d8a", range: 800 },
-  thermal: { icon: "thermal", color: "#e8590c", range: 600 },
 };
 
 export const rangeOf = (s: Sensor) => SENSOR_TYPES[s.type].range;

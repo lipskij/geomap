@@ -16,7 +16,7 @@ Live map of object positions from Remote ID detections, built with Vue 3, TypeSc
 - Track history and the alert log are saved in the browser and survive page reloads
 - Fades objects after 10 s without updates, removes them after 60 s
 - Light (default), dark, full-colour and satellite base maps; panels switch to dark colours on the dark map
-- Sensor planner: place Remote ID, acoustic, camera and thermal sensors on the map, see where their coverage overlaps, and export a deployment list (see [Sensor planner](#sensor-planner))
+- Sensor planner: place Remote ID, acoustic and camera sensors on the map, see where their coverage overlaps, and export a deployment list (see [Sensor planner](#sensor-planner))
 - English and Lithuanian interface; switch the language in the layers panel (round button, bottom right). The choice is remembered; the default follows the browser language
 - Replay recorded tracks (CSV, GPX, KML) with play/pause, seek and speed control
 
@@ -53,8 +53,8 @@ Every message shown as a pop-up (new object, prohibited zone entry, above 120 m)
 
 Switch to **Planner** (top left) to plan where sensors should go. Live drones, alerts and the replay panel are hidden while planning; **Show live drones and alerts** brings them back. Planned sensors are only shown in Planner mode.
 
-- Drag a sensor type (Remote ID, acoustic, camera, thermal) onto the map, or click it and then click the map. Drag placed sensors to move them
-- Each sensor has a coverage circle with a default radius per type: Remote ID 1000 m, acoustic 300 m, camera 800 m, thermal 600 m (per-sensor values will come with the real sensor list)
+- Drag a sensor type (Remote ID, acoustic, camera) onto the map, or click it and then click the map. Drag placed sensors to move them
+- Each sensor has a coverage circle with a default radius per type: Remote ID 1000 m, acoustic 300 m and camera 800 m (per-sensor values will come with the real sensor list)
 - **Coverage overlap** shades where 2 sensors (amber) or 3+ sensors (green, enough to triangulate) cover the same spot, for all types or one type. Each sensor in the list shows how many others it overlaps
 - Coverage follows the terrain: a spot counts as covered only if a drone 30 m above the ground there is in line of sight of the sensor (mast height 3 m). Spots in range that hills hide from every sensor are shaded grey. Elevation comes from [Terrarium tiles](https://registry.opendata.aws/terrain-tiles/) (EU-DEM for Lithuania, about 25 m resolution, bare ground: forests and buildings aren't counted). The terrain itself isn't drawn. Check the line-of-sight logic with `node scripts/coverage-check.ts`
 - The list counts sensors per type: the deployment list for the field team
