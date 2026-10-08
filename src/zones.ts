@@ -34,7 +34,7 @@ interface Applicability {
   schedule?: Schedule[];
 }
 
-export type CheckLevel = "ok" | "info" | "warn" | "alert";
+type CheckLevel = "ok" | "info" | "warn" | "alert";
 
 export interface ZoneCheck {
   level: CheckLevel;

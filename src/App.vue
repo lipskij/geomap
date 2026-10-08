@@ -157,6 +157,11 @@ watch(checks, (all) => {
   }
 });
 
+// Hiding drones (planner mode) drops focus and follow: the map must not chase a hidden drone
+watch(showDrones, (on) => {
+  if (!on) following.value = selected.value = null;
+});
+
 // Stop following a drone that has disappeared
 watch(activeDrones, (list) => {
   if (following.value && !list.some((d) => d.basic_id === following.value))
@@ -310,7 +315,6 @@ function onExport(id: string, format: ExportFormat) {
   /* Light: white cards on a muted map, blue for actions, colour carries meaning */
   --map-bg: #e9edf1;
   --panel: #ffffff;
-  --panel-solid: #ffffff;
   --shadow: 0 6px 24px rgba(23, 37, 63, 0.14), 0 1px 3px rgba(23, 37, 63, 0.08);
   --text: #2c3542;
   --text-strong: #121a26;
@@ -334,7 +338,6 @@ function onExport(id: string, format: ExportFormat) {
 :root[data-theme="dark"] {
   --map-bg: #10151d;
   --panel: #1a212c;
-  --panel-solid: #1a212c;
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
   --text: #d5dce6;
   --text-strong: #ffffff;
@@ -379,6 +382,48 @@ body,
   color: var(--danger);
   font-weight: 600;
   box-shadow: var(--shadow);
+}
+
+/* Plain buttons; components style them with classes */
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+/* Right-hand panel (drone list / sensor planner) and its section headings */
+.side-panel {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+  width: 320px;
+  max-width: calc(100vw - 20px);
+  max-height: calc(100vh - 220px); /* keeps the zoom and layers buttons below it visible */
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  font: var(--font-size) var(--font);
+  color: var(--text);
+  overflow: hidden;
+}
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 700 15px var(--font-head);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-strong);
+}
+.panel-title .icon {
+  font-size: 18px;
+  color: var(--accent);
 }
 
 /* Monitor / Planner switch, top-left; notifications stack below it */

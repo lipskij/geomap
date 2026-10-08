@@ -19,7 +19,7 @@ interface RawDetection {
   received?: number // unix seconds when the receiver got the frame (added by the backend)
 }
 
-export function toDetection(r: RawDetection, now = Date.now() / 1000): Detection {
+function toDetection(r: RawDetection): Detection {
   return {
     basic_id: r['uav id'],
     rssi: r.rssi,
@@ -31,7 +31,7 @@ export function toDetection(r: RawDetection, now = Date.now() / 1000): Detection
     pilot_long: r['base longitude'],
     // ponytail: falls back to browser time until the backend sends `received`;
     // then a drone the backend keeps returning never goes stale here
-    last_update: r.received ?? now,
+    last_update: r.received ?? Date.now() / 1000,
   }
 }
 

@@ -11,7 +11,7 @@ import type { Restriction, Zone, ZoneCheck } from "../zones";
 import { rangeOf, SENSOR_TYPES, type Sensor, type SensorType } from "../composables/useSensors";
 import { overlapImage } from "../coverage";
 import { lang, t, type MsgKey } from "../i18n";
-import { ICONS } from "../icons";
+import { ICONS, type IconName } from "../icons";
 
 export type BaseLayer = "light" | "dark" | "map" | "satellite";
 
@@ -57,21 +57,19 @@ let zoomedToFirst = false;
 let moving = false; // true while the map is panning/zooming
 let pending: Detections | null = null; // latest data received mid-move
 let zonesLayer: L.GeoJSON | null = null;
-// Drones get their own panes, so hiding them is one style change and their paths survive
+// Drones and planned sensors get their own panes, so hiding either is one style change
+// (drone paths keep recording while hidden; sensors only show in planner mode)
 let pathRenderer: L.Renderer | undefined;
-// Same for planned sensors: only shown in planner mode
 let sensorRenderer: L.Renderer | undefined;
+const DRONE_PANES = ["drones", "dronePaths"];
+const SENSOR_PANES = ["sensors", "sensorAreas"];
 
-function showSensorPanes(on: boolean) {
+function showPanes(panes: string[], on: boolean) {
   if (!map) return;
-  for (const pane of ["sensors", "sensorAreas"]) map.getPane(pane)!.style.display = on ? "" : "none";
+  for (const pane of panes) map.getPane(pane)!.style.display = on ? "" : "none";
+  if (!on && panes === DRONE_PANES) map.closePopup(); // don't leave a hidden drone's popup open
 }
 
-function showDronePanes(on: boolean) {
-  if (!map) return;
-  for (const pane of ["drones", "dronePaths"]) map.getPane(pane)!.style.display = on ? "" : "none";
-  if (!on) map.closePopup();
-}
 let baseLayers: Record<BaseLayer, L.TileLayer> | null = null;
 
 function showBase(key: BaseLayer) {
@@ -111,16 +109,6 @@ function drawOverlap() {
   overlapLayer.bringToBack();
 }
 
-function sensorIcon(type: SensorType): L.DivIcon {
-  const { icon, color } = SENSOR_TYPES[type];
-  return L.divIcon({
-    className: "rid-icon",
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
-    html: `<span class="sensor-marker" style="background:${color}"><svg viewBox="0 0 24 24" fill="currentColor">${ICONS[icon]}</svg></span>`,
-  });
-}
-
 function syncSensors() {
   if (!map) return;
   const ids = new Set(props.sensors.map((s) => s.id));
@@ -144,7 +132,7 @@ function syncSensors() {
         renderer: sensorRenderer,
       }).addTo(map);
       const marker = L.marker([s.lat, s.lng], {
-        icon: sensorIcon(s.type),
+        icon: glyphIcon("sensor-marker", SENSOR_TYPES[s.type].color, SENSOR_TYPES[s.type].icon, 30),
         draggable: true,
         pane: "sensors",
       }).addTo(map);
@@ -189,23 +177,14 @@ function panTo(lat: number, lng: number) {
   });
 }
 
-function droneIcon(color: string): L.DivIcon {
+// Marker: coloured shape (.rid-marker disc / .sensor-marker square) with a white glyph
+function glyphIcon(cls: string, color: string, glyph: IconName, size: number): L.DivIcon {
   return L.divIcon({
     className: "rid-icon",
-    iconSize: [34, 34],
-    iconAnchor: [17, 17],
-    popupAnchor: [0, -17],
-    html: `<span class="rid-marker" style="background:${color}"><svg viewBox="0 0 24 24" fill="currentColor">${ICONS.drone}</svg></span>`,
-  });
-}
-
-function pilotIcon(color: string): L.DivIcon {
-  return L.divIcon({
-    className: "rid-icon",
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-    popupAnchor: [0, -12],
-    html: `<span class="rid-marker pilot" style="background:${color}"><svg viewBox="0 0 24 24" fill="currentColor">${ICONS.pilot}</svg></span>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2],
+    html: `<span class="${cls}" style="background:${color}"><svg viewBox="0 0 24 24" fill="currentColor">${ICONS[glyph]}</svg></span>`,
   });
 }
 
@@ -459,7 +438,7 @@ function update(detections: Detections) {
       t.drone = upsertMarker(
         t.drone,
         pos,
-        droneIcon(color),
+        glyphIcon("rid-marker", color, "drone", 34),
         t.dronePopup,
         d,
         props.checks[id],
@@ -479,7 +458,7 @@ function update(detections: Detections) {
 
     if (validPos(d.pilot_lat, d.pilot_long)) {
       const pos: L.LatLngTuple = [d.pilot_lat, d.pilot_long];
-      t.pilot = upsertMarker(t.pilot, pos, pilotIcon(color), t.pilotPopup, d);
+      t.pilot = upsertMarker(t.pilot, pos, glyphIcon("rid-marker pilot", color, "pilot", 24), t.pilotPopup, d);
       appendPath(t.pilotPath, pos);
     }
 
@@ -549,11 +528,11 @@ onMounted(() => {
   map.createPane("dronePaths").style.zIndex = "420"; // above sensor circles (overlay pane)
   map.createPane("drones").style.zIndex = "610"; // above sensor markers (marker pane)
   pathRenderer = L.svg({ pane: "dronePaths", padding: 2 });
-  showDronePanes(props.showDrones);
+  showPanes(DRONE_PANES, props.showDrones);
   map.createPane("sensorAreas").style.zIndex = "410"; // coverage circles + overlap, under drone paths
   map.createPane("sensors").style.zIndex = "605"; // sensor markers, under drone markers
   sensorRenderer = L.svg({ pane: "sensorAreas", padding: 2 });
-  showSensorPanes(props.planning);
+  showPanes(SENSOR_PANES, props.planning);
   const osm = (className?: string) =>
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
@@ -602,8 +581,8 @@ watch(() => props.detections, update);
 watch(() => props.zones, renderZoneLayer);
 watch(() => props.base, showBase);
 watch(() => props.showZones, showZoneLayer);
-watch(() => props.showDrones, showDronePanes);
-watch(() => props.planning, showSensorPanes);
+watch(() => props.showDrones, (on) => showPanes(DRONE_PANES, on));
+watch(() => props.planning, (on) => showPanes(SENSOR_PANES, on));
 watch(() => [props.sensors, props.planning], syncSensors, { deep: true });
 watch(() => [props.sensors, props.planning, props.overlap], drawOverlap, { deep: true });
 

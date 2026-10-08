@@ -103,9 +103,9 @@ async function onImport(e: Event) {
 </script>
 
 <template>
-  <section class="panel">
+  <section class="side-panel">
     <header class="head">
-      <span class="title"><Icon name="sensors" />{{ t("plan.title") }}</span>
+      <span class="panel-title"><Icon name="sensors" />{{ t("plan.title") }}</span>
       <input
         class="plan-name"
         :value="name"
@@ -145,26 +145,21 @@ async function onImport(e: Event) {
         {{ t("plan.showLive") }}
       </label>
       <label class="check">
-        <input
-          type="checkbox"
-          :checked="overlap !== null"
-          @change="
-            emit('overlap', ($event.target as HTMLInputElement).checked ? 'all' : null)
-          "
-        />
         {{ t("plan.overlap") }}
+        <select
+          :value="overlap ?? ''"
+          @change="
+            emit(
+              'overlap',
+              (($event.target as HTMLSelectElement).value || null) as SensorType | 'all' | null,
+            )
+          "
+        >
+          <option value="">{{ t("plan.off") }}</option>
+          <option value="all">{{ t("plan.allTypes") }}</option>
+          <option v-for="type in types" :key="type" :value="type">{{ typeName(type) }}</option>
+        </select>
       </label>
-      <select
-        v-if="overlap !== null"
-        :value="overlap"
-        :title="t('plan.overlapOf')"
-        @change="
-          emit('overlap', ($event.target as HTMLSelectElement).value as SensorType | 'all')
-        "
-      >
-        <option value="all">{{ t("plan.allTypes") }}</option>
-        <option v-for="type in types" :key="type" :value="type">{{ typeName(type) }}</option>
-      </select>
       <div v-if="overlap !== null" class="legend">
         <span><i class="two" />{{ t("plan.overlap2") }}</span>
         <span><i class="three" />{{ t("plan.overlap3") }}</span>
@@ -239,31 +234,6 @@ async function onImport(e: Event) {
 </template>
 
 <style scoped>
-.panel {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 1000;
-  width: 320px;
-  max-width: calc(100vw - 20px);
-  max-height: calc(100vh - 220px); /* keeps the zoom and layers buttons below it visible */
-  display: flex;
-  flex-direction: column;
-  background: var(--panel);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
-  font: var(--font-size) var(--font);
-  color: var(--text);
-  overflow: hidden;
-}
-button {
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: 0;
-  cursor: pointer;
-  text-align: left;
-}
 .head {
   padding: 12px 16px 8px;
 }
@@ -282,19 +252,6 @@ button {
 .plan-name:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
-}
-.title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font: 700 15px var(--font-head);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-strong);
-}
-.title .icon {
-  font-size: 18px;
-  color: var(--accent);
 }
 .palette {
   display: grid;
@@ -363,8 +320,11 @@ button {
   margin: 0;
   accent-color: var(--accent);
 }
+.overlap .check:not(.live) {
+  width: 100%;
+  justify-content: space-between;
+}
 .overlap select {
-  margin-left: auto;
   padding: 3px 8px;
   border: 0;
   border-radius: 999px;

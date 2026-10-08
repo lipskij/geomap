@@ -95,14 +95,6 @@ const desc = (key: BaseLayer) => `layer.${key}.desc` as MsgKey;
 </template>
 
 <style scoped>
-button {
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: 0;
-  cursor: pointer;
-  text-align: left;
-}
 .fab {
   position: absolute;
   right: 12px;

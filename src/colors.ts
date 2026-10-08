@@ -1,5 +1,5 @@
 // Distinct colors, assigned in order of first appearance
-export const PALETTE = [
+const PALETTE = [
   '#e6194b', // red
   '#4363d8', // blue
   '#f58231', // orange

@@ -141,13 +141,6 @@ function onFile(e: Event) {
     max-width: calc(100vw - 20px);
   }
 }
-button {
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: 0;
-  cursor: pointer;
-}
 .open {
   display: flex;
   align-items: center;

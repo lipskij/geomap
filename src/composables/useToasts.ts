@@ -4,7 +4,7 @@ import { TOAST_MS } from "../config";
 import type { MsgKey, Params } from "../i18n";
 import { REPLAY_PREFIX } from "./useReplay";
 
-export type ToastKind = "info" | "alert";
+type ToastKind = "info" | "alert";
 
 export interface Toast {
   key: number;

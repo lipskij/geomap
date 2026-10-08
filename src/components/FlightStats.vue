@@ -280,7 +280,7 @@ async function copy(key: string, text: string) {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  box-shadow: 0 0 0 2px var(--panel-solid);
+  box-shadow: 0 0 0 2px var(--panel);
   transform: translate(-50%, -50%);
   pointer-events: none;
 }

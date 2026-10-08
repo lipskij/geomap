@@ -71,9 +71,9 @@ function doExport(id: string, f: ExportFormat) {
 </script>
 
 <template>
-  <section class="panel">
+  <section class="side-panel">
     <button class="header" :aria-expanded="open" @click="open = !open">
-      <span class="title">
+      <span class="panel-title">
         <Icon name="drone" />{{ t("list.drones", { n: drones.length }) }}
       </span>
     </button>
@@ -157,7 +157,7 @@ function doExport(id: string, f: ExportFormat) {
       :aria-expanded="alertsOpen"
       @click="alertsOpen = !alertsOpen"
     >
-      <span class="title">
+      <span class="panel-title">
         <Icon name="bell" />{{ t("alerts.title", { n: alerts.length }) }}
       </span>
     </button>
@@ -197,31 +197,6 @@ function doExport(id: string, f: ExportFormat) {
 </template>
 
 <style scoped>
-.panel {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 1000;
-  width: 320px;
-  max-width: calc(100vw - 20px);
-  max-height: calc(100vh - 220px); /* keeps the zoom and layers buttons below it visible */
-  display: flex;
-  flex-direction: column;
-  background: var(--panel);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
-  font: var(--font-size) var(--font);
-  color: var(--text);
-  overflow: hidden;
-}
-button {
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: 0;
-  cursor: pointer;
-  text-align: left;
-}
 .header {
   display: flex;
   justify-content: space-between;
@@ -230,19 +205,6 @@ button {
 }
 .header:hover {
   background: var(--hover);
-}
-.title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font: 700 15px var(--font-head);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-strong);
-}
-.title .icon {
-  font-size: 18px;
-  color: var(--accent);
 }
 /* Chevron: flattens and flips when the section opens */
 .header::after {
