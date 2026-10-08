@@ -65,7 +65,7 @@ function droneIcon(color: string): L.DivIcon {
     popupAnchor: [0, -16],
     html: `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <g stroke="#e5e7eb" stroke-width="2" stroke-linecap="round">
+  <g style="stroke: var(--icon-arm)" stroke-width="2" stroke-linecap="round">
     <line x1="8" y1="8" x2="24" y2="24"/><line x1="24" y1="8" x2="8" y2="24"/>
   </g>
   <g fill="#e5e7eb" fill-opacity="0.85" stroke="#1f2937" stroke-width="1.5">
@@ -438,6 +438,10 @@ onMounted(() => {
   );
 
   dark.addTo(map);
+  // Panels follow the base map: dark tokens on the dark map, light ones otherwise
+  map.on("baselayerchange", (e) => {
+    document.documentElement.dataset.theme = e.layer === dark ? "dark" : "light";
+  });
   baseLayers = [
     [dark, "layer.dark"],
     [osm, "layer.map"],

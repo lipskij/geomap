@@ -245,7 +245,32 @@ function onExport(id: string, format: ExportFormat) {
   --warn: #fbbf24;
   --warn-bg: rgba(251, 191, 36, 0.16);
   --ok: #5fd08a;
+  --icon-arm: #e5e7eb;
+  --attribution-bg: rgba(19, 20, 22, 0.8);
   color-scheme: dark;
+}
+/* Light map / satellite: the original light panels */
+:root[data-theme="light"] {
+  --panel: #fff;
+  --panel-solid: #fff;
+  --shadow: 0 1px 5px rgba(0, 0, 0, 0.3);
+  --text: #1f2937;
+  --text-strong: #111827;
+  --muted: #6b7280;
+  --faint: #9ca3af;
+  --line: #e5e7eb;
+  --hover: #f3f4f6;
+  --selected: #e0e7ff;
+  --accent: #4363d8;
+  --on-accent: #fff;
+  --danger: #b91c1c;
+  --danger-bg: #fee2e2;
+  --warn: #92400e;
+  --warn-bg: #fef3c7;
+  --ok: #166534;
+  --icon-arm: #1f2937;
+  --attribution-bg: rgba(255, 255, 255, 0.8);
+  color-scheme: light;
 }
 html,
 body,
@@ -305,7 +330,7 @@ body,
   color: var(--muted);
 }
 .leaflet-control-attribution {
-  background: rgba(19, 20, 22, 0.8) !important;
+  background: var(--attribution-bg) !important;
   color: var(--faint);
 }
 .leaflet-control-attribution a {
