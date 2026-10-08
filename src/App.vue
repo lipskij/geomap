@@ -226,11 +226,33 @@ function onExport(id: string, format: ExportFormat) {
 </template>
 
 <style>
+:root {
+  /* Neutral greys; colour only carries meaning (alert, warning, OK) */
+  --panel: #131416;
+  --panel-solid: #131416;
+  --shadow: 0 0 0 1px #2c2e33;
+  --text: #d6d7da;
+  --text-strong: #ffffff;
+  --muted: #8b8e94;
+  --faint: #5d6066;
+  --line: #24262a;
+  --hover: #1c1e21;
+  --selected: #24262a;
+  --accent: #ffffff;
+  --on-accent: #131416;
+  --danger: #ff5a52;
+  --danger-bg: rgba(255, 90, 82, 0.14);
+  --warn: #fbbf24;
+  --warn-bg: rgba(251, 191, 36, 0.16);
+  --ok: #5fd08a;
+  color-scheme: dark;
+}
 html,
 body,
 #app {
   margin: 0;
   height: 100%;
+  background: #0e0f11;
 }
 #app {
   position: relative;
@@ -240,7 +262,53 @@ body,
   z-index: 1000;
   margin: 8px;
   padding: 6px 10px;
-  background: #fee;
-  color: #900;
+  border-radius: 6px;
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.dark-tiles {
+  filter: grayscale(1) invert(1) brightness(0.62) contrast(1.15);
+}
+
+/* Leaflet controls and popups in the same dark style */
+.leaflet-container {
+  background: #0e0f11;
+  font: 13px/1.3 system-ui, sans-serif;
+}
+.leaflet-bar,
+.leaflet-control-layers {
+  border: 0 !important;
+  border-radius: 2px !important;
+  overflow: hidden;
+  box-shadow: var(--shadow) !important;
+}
+.leaflet-bar a,
+.leaflet-control-layers,
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--panel-solid) !important;
+  color: var(--text) !important;
+  border-color: var(--line) !important;
+}
+.leaflet-bar a:hover {
+  background: var(--hover) !important;
+}
+.leaflet-control-layers-separator {
+  border-top-color: var(--line) !important;
+}
+.leaflet-popup-content-wrapper {
+  border-radius: 2px;
+  box-shadow: var(--shadow);
+}
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--muted);
+}
+.leaflet-control-attribution {
+  background: rgba(19, 20, 22, 0.8) !important;
+  color: var(--faint);
+}
+.leaflet-control-attribution a {
+  color: var(--muted);
 }
 </style>

@@ -65,29 +65,32 @@ npm run dev
 
 ## Data format
 
-`GET /api/...` returns an object keyed by `basic_id`:
+`GET /api/detections` returns one decoded Remote ID frame, or an array of them (ESP32 `id_open` JSON). `src/api.ts` maps each one to the app's `Detection`, keyed by `uav id`:
 
 ```json
 {
-  "1581F5FJD239C00A1B2C": {
-    "basic_id": "1581F5FJD239C00A1B2C",
-    "rssi": -62,
-    "drone_lat": 54.6875,
-    "drone_long": 25.2864,
-    "drone_altitude": 84,
-    "drone_speed": 13.4,
-    "pilot_lat": 54.6872,
-    "pilot_long": 25.2797,
-    "last_update": 1790000000
-  }
+  "uav id": "112624150A90E3AE1EC0",
+  "rssi": -62,
+  "uav latitude": 51.4791,
+  "uav longitude": -0.0013,
+  "uav altitude": 110,
+  "uav speed": 0,
+  "base latitude": 51.4790,
+  "base longitude": -0.0010,
+  "unix time": 1574357589
 }
 ```
 
-| Field            | Unit               |
-| ---------------- | ------------------ |
-| `drone_altitude` | m                  |
-| `drone_speed`    | m/s, horizontal    |
-| `last_update`    | Unix time, seconds |
+| Field                               | Maps to                     | Unit               |
+| ----------------------------------- | --------------------------- | ------------------ |
+| `uav id`                            | `basic_id`                  |                    |
+| `uav latitude` / `uav longitude`    | `drone_lat` / `drone_long`  | degrees            |
+| `uav altitude`                      | `drone_altitude`            | m                  |
+| `uav speed`                         | `drone_speed`               | m/s, horizontal    |
+| `base latitude` / `base longitude`  | `pilot_lat` / `pilot_long`  | degrees            |
+| `unix time`                         | `last_update`               | Unix time, seconds |
+
+Other fields (`mac`, `operator`, `self id`, `uav heading`, `seconds`, auth pages) are ignored for now.
 
 ## Real data
 

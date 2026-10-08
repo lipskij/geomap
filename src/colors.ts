@@ -7,8 +7,8 @@ export const PALETTE = [
   '#42d4f4', // cyan
   '#f032e6', // magenta
   '#3cb44b', // green
-  '#800000', // maroon
-  '#000075', // navy
+  '#fabed4', // pink
+  '#ffe119', // yellow
   '#9a6324', // brown
 ]
 const colors = new Map<string, string>()

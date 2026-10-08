@@ -65,7 +65,7 @@ function droneIcon(color: string): L.DivIcon {
     popupAnchor: [0, -16],
     html: `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <g stroke="#1f2937" stroke-width="2" stroke-linecap="round">
+  <g stroke="#e5e7eb" stroke-width="2" stroke-linecap="round">
     <line x1="8" y1="8" x2="24" y2="24"/><line x1="24" y1="8" x2="8" y2="24"/>
   </g>
   <g fill="#e5e7eb" fill-opacity="0.85" stroke="#1f2937" stroke-width="1.5">
@@ -426,13 +426,20 @@ onMounted(() => {
       attribution: "&copy; OpenStreetMap contributors",
     },
   );
+  // OSM tiles darkened in CSS (.dark-tiles), no tile key needed
+  const dark = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors",
+    className: "dark-tiles",
+  });
   const satellite = L.tileLayer(
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     { maxZoom: 19, attribution: "Tiles &copy; Esri" },
   );
 
-  osm.addTo(map);
+  dark.addTo(map);
   baseLayers = [
+    [dark, "layer.dark"],
     [osm, "layer.map"],
     [satellite, "layer.satellite"],
   ];
@@ -537,42 +544,42 @@ onBeforeUnmount(() => {
   padding: 0 4px;
   border-radius: 4px;
   font-size: 16px;
-  color: #4b5563;
+  color: var(--muted);
 }
 :deep(.rid-popup button:hover) {
-  background: #e5e7eb;
-  color: #111827;
+  background: var(--line);
+  color: var(--text-strong);
 }
 :deep(.rid-popup .zones) {
   margin-top: 4px;
   padding-top: 4px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--line);
 }
 :deep(.rid-popup .zrow) {
   padding-left: 8px;
-  border-left: 3px solid #9ca3af;
+  border-left: 3px solid var(--faint);
   margin: 2px 0;
 }
 :deep(.rid-popup .zrow.PROHIBITED) {
-  border-color: #dc2626;
-  color: #b91c1c;
+  border-color: var(--danger);
+  color: var(--danger);
 }
 :deep(.rid-popup .zrow.REQ_AUTHORISATION) {
-  border-color: #d97706;
-  color: #92400e;
+  border-color: var(--warn);
+  color: var(--warn);
 }
 :deep(.rid-popup .zrow.above) {
-  border-color: #d97706;
-  color: #92400e;
+  border-color: var(--warn);
+  color: var(--warn);
 }
 :deep(.rid-popup .zrow.ok) {
-  border-color: #16a34a;
-  color: #166534;
+  border-color: var(--ok);
+  color: var(--ok);
 }
 :deep(.rid-popup .zmsg) {
   margin-top: 4px;
   font-size: 12px;
-  color: #4b5563;
+  color: var(--muted);
   max-height: 120px;
   overflow-y: auto;
 }

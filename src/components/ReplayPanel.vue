@@ -100,13 +100,13 @@ function onFile(e: Event) {
   z-index: 1000;
   max-width: calc(100vw - 20px);
   padding: 8px 10px;
-  background: #fff;
-  border-radius: 6px;
-  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.3);
+  background: var(--panel);
+  border-radius: 2px;
+  box-shadow: var(--shadow);
   font:
     13px/1.3 system-ui,
     sans-serif;
-  color: #1f2937;
+  color: var(--text);
   box-sizing: border-box;
 }
 button {
@@ -124,7 +124,7 @@ button {
   border-radius: 4px;
 }
 .open:hover {
-  background: #f3f4f6;
+  background: var(--hover);
 }
 .head {
   display: flex;
@@ -141,7 +141,7 @@ button {
 }
 .count {
   flex: none;
-  color: #6b7280;
+  color: var(--muted);
   font-size: 12px;
 }
 .icon {
@@ -151,11 +151,11 @@ button {
   border-radius: 4px;
   font-size: 15px;
   line-height: 1;
-  color: #6b7280;
+  color: var(--muted);
 }
 .icon:hover {
-  background: #e5e7eb;
-  color: #111827;
+  background: var(--line);
+  color: var(--text-strong);
 }
 .controls {
   display: flex;
@@ -168,8 +168,8 @@ button {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: #4363d8;
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
   font-size: 12px;
 }
 .seek {
@@ -185,12 +185,12 @@ button {
 .time {
   margin-top: 2px;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 .err {
   margin-top: 4px;
   font-size: 12px;
-  color: #b91c1c;
+  color: var(--danger);
 }
 </style>

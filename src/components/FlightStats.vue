@@ -157,7 +157,7 @@ async function copy(key: string, text: string) {
 .alt-head {
   display: flex;
   justify-content: space-between;
-  color: #6b7280;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 .plot {
@@ -182,16 +182,16 @@ async function copy(key: string, text: string) {
   stroke-linejoin: round;
 }
 .base {
-  stroke: #e5e7eb;
+  stroke: var(--line);
   stroke-width: 1;
 }
 .limit {
-  stroke: #b91c1c;
+  stroke: var(--danger);
   stroke-width: 1;
   stroke-dasharray: 3 3;
 }
 .cross {
-  stroke: #9ca3af;
+  stroke: var(--faint);
   stroke-width: 1;
 }
 .limit-label {
@@ -200,7 +200,7 @@ async function copy(key: string, text: string) {
   transform: translateY(-100%);
   font-size: 10px;
   line-height: 1.2;
-  color: #b91c1c;
+  color: var(--danger);
   pointer-events: none;
 }
 .dot {
@@ -208,7 +208,7 @@ async function copy(key: string, text: string) {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  box-shadow: 0 0 0 2px #fff;
+  box-shadow: 0 0 0 2px var(--panel-solid);
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
@@ -222,7 +222,7 @@ dl {
 dt,
 dd {
   padding: 3px 0;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--line);
 }
 dt:last-of-type,
 dd:last-of-type {
@@ -230,7 +230,7 @@ dd:last-of-type {
 }
 dt {
   padding-right: 12px;
-  color: #6b7280;
+  color: var(--muted);
 }
 dd {
   margin: 0;
@@ -245,10 +245,10 @@ dd code {
 }
 dt.sub {
   padding-left: 10px;
-  color: #b91c1c;
+  color: var(--danger);
 }
 dd.alert {
-  color: #b91c1c;
+  color: var(--danger);
   font-weight: 600;
 }
 /* Same look as the list's icon buttons */
@@ -263,10 +263,10 @@ dd.alert {
   cursor: pointer;
   font: inherit;
   font-size: 15px;
-  color: #6b7280;
+  color: var(--muted);
 }
 .copy:hover {
-  background: #e5e7eb;
-  color: #111827;
+  background: var(--line);
+  color: var(--text-strong);
 }
 </style>
