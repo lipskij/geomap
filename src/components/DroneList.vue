@@ -4,6 +4,7 @@ import type { Detection } from "../types";
 import { exportAlerts, type ExportFormat } from "../export";
 import type { Alert } from "../composables/useToasts";
 import FlightStats from "./FlightStats.vue";
+import Icon from "./Icon.vue";
 import type { ZoneCheck } from "../zones";
 import { colorFor } from "../colors";
 import { locale, t } from "../i18n";
@@ -72,7 +73,9 @@ function doExport(id: string, f: ExportFormat) {
 <template>
   <section class="panel">
     <button class="header" :aria-expanded="open" @click="open = !open">
-      <span>{{ t("list.drones", { n: drones.length }) }}</span>
+      <span class="title">
+        <Icon name="drone" />{{ t("list.drones", { n: drones.length }) }}
+      </span>
     </button>
 
     <ul v-if="open" class="list">
@@ -92,10 +95,9 @@ function doExport(id: string, f: ExportFormat) {
             :aria-expanded="expanded === d.basic_id"
             @click="onRow(d.basic_id)"
           >
-            <span
-              class="swatch"
-              :style="{ background: colorFor(d.basic_id) }"
-            />
+            <span class="disc" :style="{ background: colorFor(d.basic_id) }">
+              <Icon name="drone" />
+            </span>
             <span class="main">
               <span class="id">{{ d.basic_id }}</span>
               <span
@@ -118,7 +120,7 @@ function doExport(id: string, f: ExportFormat) {
             :title="t(following === d.basic_id ? 'list.unfollow' : 'list.follow')"
             @click="toggleFollow(d.basic_id)"
           >
-            ◎
+            <Icon name="follow" />
           </button>
           <button
             v-if="!d.basic_id.startsWith(REPLAY_PREFIX)"
@@ -127,7 +129,7 @@ function doExport(id: string, f: ExportFormat) {
             :title="t('list.export')"
             @click="exportMenu = exportMenu === d.basic_id ? null : d.basic_id"
           >
-            ⤓
+            <Icon name="download" />
           </button>
         </div>
         <div v-if="exportMenu === d.basic_id" class="export">
@@ -141,11 +143,7 @@ function doExport(id: string, f: ExportFormat) {
             {{ f.toUpperCase() }}
           </button>
         </div>
-        <div
-          v-if="expandedStats && expanded === d.basic_id"
-          class="stat"
-          :style="{ borderLeftColor: colorFor(d.basic_id) }"
-        >
+        <div v-if="expandedStats && expanded === d.basic_id" class="stat">
           <FlightStats
             :s="expandedStats"
             :live="!d.basic_id.startsWith(REPLAY_PREFIX)"
@@ -159,7 +157,9 @@ function doExport(id: string, f: ExportFormat) {
       :aria-expanded="alertsOpen"
       @click="alertsOpen = !alertsOpen"
     >
-      <span>{{ t("alerts.title", { n: alerts.length }) }}</span>
+      <span class="title">
+        <Icon name="bell" />{{ t("alerts.title", { n: alerts.length }) }}
+      </span>
     </button>
     <div v-if="alertsOpen" class="alerts">
       <div v-if="alerts.length" class="tools">
@@ -184,7 +184,7 @@ function doExport(id: string, f: ExportFormat) {
         "
         @click="emit('select', a.droneId)"
       >
-        <span class="swatch" :style="{ background: colorFor(a.droneId) }" />
+        <span class="dot" :style="{ background: colorFor(a.droneId) }" />
         <span class="main">
           <span class="text">{{ t(a.msg, a.params) }}</span>
           <span class="id">{{ a.droneId }}</span>
@@ -208,11 +208,9 @@ function doExport(id: string, f: ExportFormat) {
   display: flex;
   flex-direction: column;
   background: var(--panel);
-  border-radius: 2px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
-  font:
-    13px/1.3 system-ui,
-    sans-serif;
+  font: var(--font-size) var(--font);
   color: var(--text);
   overflow: hidden;
 }
@@ -228,22 +226,30 @@ button {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 9px 12px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text);
+  padding: 12px 16px;
 }
 .header:hover {
   background: var(--hover);
+}
+.title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 700 15px var(--font-head);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-strong);
+}
+.title .icon {
+  font-size: 18px;
+  color: var(--accent);
 }
 /* Chevron: flattens and flips when the section opens */
 .header::after {
   content: "";
   width: 1.25em;
   height: 1.25em;
-  background: currentColor;
+  background: var(--muted);
   mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='black' stroke-width='1.5'/></svg>")
     center / contain no-repeat;
   transition: transform 0.15s;
@@ -255,13 +261,17 @@ button {
 .list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 0 6px;
   overflow-y: auto;
-  border-top: 1px solid var(--line);
 }
 .empty {
-  padding: 10px 12px;
+  margin: 0;
+  padding: 4px 16px 12px;
   color: var(--muted);
+}
+.item {
+  margin: 0 8px;
+  border-radius: var(--radius);
 }
 .item:hover {
   background: var(--hover);
@@ -282,39 +292,46 @@ button {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 6px 8px 12px;
+  gap: 12px;
+  padding: 9px 6px 9px 10px;
 }
-.swatch {
+.disc {
   flex: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 19px;
 }
 .main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 1px;
 }
 .id {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
+  color: var(--text-strong);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .meta {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 .badge {
   align-self: flex-start;
   margin: 2px 0;
-  padding: 0 6px;
-  border-radius: 3px;
+  padding: 1px 8px;
+  border-radius: 999px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -329,26 +346,28 @@ button {
   color: var(--warn);
 }
 .badge.info {
-  background: var(--line);
-  color: var(--text);
+  background: var(--hover);
+  color: var(--muted);
 }
 .age {
   flex: none;
   color: var(--muted);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 .action {
   flex: none;
-  width: 26px;
-  height: 26px;
-  border-radius: 4px;
-  text-align: center;
-  font-size: 15px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-size: 17px;
   color: var(--muted);
 }
 .action:hover {
-  background: var(--line);
-  color: var(--text-strong);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .action.active {
   background: var(--accent);
@@ -358,41 +377,46 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 12px 8px 34px;
+  padding: 0 12px 10px 54px;
   font-size: 12px;
   color: var(--muted);
 }
 .fmt {
-  padding: 2px 8px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  font-size: 11px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--text);
-  background: var(--panel);
+  background: var(--hover);
+}
+.fmt:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .stat {
-  padding: 8px 12px 8px 9px;
-  background: var(--panel-solid); /* also under a highlighted row */
-  border-left: 3px solid; /* drone color, tells blocks apart in multi-drone files */
+  margin: 0 0 8px;
+  padding: 4px 10px 10px;
 }
 .section {
   border-top: 1px solid var(--line);
 }
 .alerts {
   overflow-y: auto;
-  border-top: 1px solid var(--line);
+  padding-bottom: 6px;
 }
 .tools {
   display: flex;
   gap: 6px;
-  padding: 6px 12px;
+  padding: 0 16px 8px;
 }
 .alert-row {
-  width: 100%;
+  width: calc(100% - 16px);
+  margin: 0 8px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 12px;
+  gap: 12px;
+  padding: 7px 10px;
+  border-radius: var(--radius);
 }
 .alert-row:hover:not(:disabled) {
   background: var(--hover);
@@ -405,7 +429,10 @@ button {
   color: var(--danger);
   font-weight: 600;
 }
-.fmt:hover {
-  background: var(--hover);
+.dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
 }
 </style>

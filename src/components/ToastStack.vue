@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Icon from "./Icon.vue";
 import type { Toast } from "../composables/useToasts";
 import { colorFor } from "../colors";
 import { t } from "../i18n";
@@ -19,7 +20,9 @@ const emit = defineEmits<{
       :class="toast.kind"
       @click="emit('select', toast.droneId)"
     >
-      <span class="swatch" :style="{ background: colorFor(toast.droneId) }" />
+      <span class="disc" :style="{ background: colorFor(toast.droneId) }">
+        <Icon :name="toast.kind === 'alert' ? 'warning' : 'drone'" />
+      </span>
       <span class="body">
         <span class="title">{{ t(toast.msg, toast.params) }}</span>
         <span class="id">{{ toast.droneId }}</span>
@@ -29,23 +32,23 @@ const emit = defineEmits<{
         :title="t('toast.dismiss')"
         @click.stop="emit('dismiss', toast.key)"
       >
-        ×
+        <Icon name="close" />
       </button>
     </div>
   </TransitionGroup>
 </template>
 
 <style scoped>
-/* Left side, below the zoom control, so it never covers the drone list */
+/* Top-left; the zoom buttons moved to the bottom right, so this corner is free */
 .stack {
   position: absolute;
-  top: 84px;
+  top: 10px;
   left: 10px;
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  width: 260px;
+  gap: 8px;
+  width: 290px;
   max-width: calc(100vw - 20px);
   pointer-events: none;
 }
@@ -53,28 +56,30 @@ const emit = defineEmits<{
   pointer-events: auto;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: 12px;
+  padding: 10px 10px 10px 12px;
   background: var(--panel);
-  border-radius: 2px;
+  border-radius: var(--radius);
   box-shadow: var(--shadow);
-  font:
-    13px/1.3 system-ui,
-    sans-serif;
+  font: var(--font-size) var(--font);
   color: var(--text);
   cursor: pointer;
 }
 .toast.alert {
-  border-left: 4px solid var(--danger);
+  box-shadow: var(--shadow), inset 4px 0 0 var(--danger);
 }
 .toast.alert .title {
   color: var(--danger);
 }
-.swatch {
+.disc {
   flex: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 17px;
 }
 .body {
   flex: 1;
@@ -84,10 +89,11 @@ const emit = defineEmits<{
 }
 .title {
   font-weight: 600;
+  color: var(--text-strong);
 }
 .id {
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -95,17 +101,19 @@ const emit = defineEmits<{
 }
 .close {
   flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
   border: 0;
+  border-radius: 50%;
   background: none;
-  font-size: 18px;
-  line-height: 1;
+  font-size: 16px;
   color: var(--muted);
   cursor: pointer;
-  padding: 0 4px;
-  border-radius: 4px;
 }
 .close:hover {
-  background: var(--line);
+  background: var(--hover);
   color: var(--text-strong);
 }
 

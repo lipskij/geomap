@@ -8,7 +8,10 @@ import { fmtPos, validPos } from "../geo";
 import { FADE_SECONDS, GAP_SECONDS, MAX_ALT_M, STALE_SECONDS } from "../config";
 import { REPLAY_PREFIX } from "../composables/useReplay";
 import type { Restriction, Zone, ZoneCheck } from "../zones";
-import { LANGS, lang, t, type Lang, type MsgKey } from "../i18n";
+import { lang, t, type MsgKey } from "../i18n";
+import { ICONS } from "../icons";
+
+export type BaseLayer = "light" | "dark" | "map" | "satellite";
 
 const props = defineProps<{
   detections: Detections;
@@ -16,6 +19,8 @@ const props = defineProps<{
   checks: Record<string, ZoneCheck>;
   following: string | null;
   rightInset: number; // px of the map covered by the panel on the right
+  base: BaseLayer;
+  showZones: boolean;
 }>();
 const emit = defineEmits<{ unfollow: [] }>();
 
@@ -40,55 +45,39 @@ let map: L.Map | null = null;
 let zoomedToFirst = false;
 let moving = false; // true while the map is panning/zooming
 let pending: Detections | null = null; // latest data received mid-move
-let layersControl: L.Control.Layers | null = null;
 let zonesLayer: L.GeoJSON | null = null;
-let baseLayers: [L.TileLayer, MsgKey][] = [];
-let langRow: HTMLElement | null = null;
+let baseLayers: Record<BaseLayer, L.TileLayer> | null = null;
 
-// (Re)add layer entries with names in the current language; keeps their order
-function labelLayers() {
-  if (!layersControl) return;
-  for (const [layer] of baseLayers) layersControl.removeLayer(layer);
-  for (const [layer, key] of baseLayers) layersControl.addBaseLayer(layer, t(key));
-  if (zonesLayer) {
-    layersControl.removeLayer(zonesLayer);
-    layersControl.addOverlay(zonesLayer, t("layer.zones"));
-  }
+function showBase(key: BaseLayer) {
+  if (!map || !baseLayers) return;
+  for (const layer of Object.values(baseLayers)) layer.remove();
+  baseLayers[key].addTo(map);
+}
+
+function showZoneLayer(on: boolean) {
+  if (!map || !zonesLayer) return;
+  if (on) zonesLayer.addTo(map);
+  else zonesLayer.remove();
 }
 const tracks = new Map<string, Track>();
 
 function droneIcon(color: string): L.DivIcon {
   return L.divIcon({
     className: "rid-icon",
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-    popupAnchor: [0, -16],
-    html: `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <g style="stroke: var(--icon-arm)" stroke-width="2" stroke-linecap="round">
-    <line x1="8" y1="8" x2="24" y2="24"/><line x1="24" y1="8" x2="8" y2="24"/>
-  </g>
-  <g fill="#e5e7eb" fill-opacity="0.85" stroke="#1f2937" stroke-width="1.5">
-    <circle cx="7" cy="7" r="5"/><circle cx="25" cy="7" r="5"/>
-    <circle cx="7" cy="25" r="5"/><circle cx="25" cy="25" r="5"/>
-  </g>
-  <rect x="12" y="12" width="8" height="8" rx="2" fill="${color}" stroke="#1f2937" stroke-width="1.5"/>
-</svg>`,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+    popupAnchor: [0, -17],
+    html: `<span class="rid-marker" style="background:${color}"><svg viewBox="0 0 24 24" fill="currentColor">${ICONS.drone}</svg></span>`,
   });
 }
 
 function pilotIcon(color: string): L.DivIcon {
   return L.divIcon({
     className: "rid-icon",
-    iconSize: [22, 22],
-    iconAnchor: [11, 11],
-    popupAnchor: [0, -11],
-    html: `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 22" width="22" height="22">
-  <circle cx="11" cy="11" r="10" fill="${color}" stroke="#1f2937" stroke-width="1.5"/>
-  <circle cx="11" cy="8" r="3" fill="#fff"/>
-  <path d="M5.5 17c1-3 3-4.5 5.5-4.5s4.5 1.5 5.5 4.5" fill="#fff"/>
-</svg>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -12],
+    html: `<span class="rid-marker pilot" style="background:${color}"><svg viewBox="0 0 24 24" fill="currentColor">${ICONS.pilot}</svg></span>`,
   });
 }
 
@@ -108,10 +97,10 @@ function createPopup(kind: "drone" | "pilot"): PopupView {
   el.className = "rid-popup";
   el.innerHTML = `
     <b data-l="popup.${kind}"></b>
-    <div class="line">ID: <code data-f="id"></code><button class=copyBtn data-copy="id" data-lt="copy.id">⧉</button></div>
+    <div class="line">ID: <code data-f="id"></code><button class=copyBtn data-copy="id" data-lt="copy.id"><svg viewBox="0 0 24 24" fill="currentColor">${ICONS.copy}</svg></button></div>
     <div>RSSI: <span data-f="rssi"></span> dBm</div>
     ${kind === "drone" ? '<div><span data-l="popup.alt"></span>: <span data-f="alt"></span> m</div><div><span data-l="popup.speed"></span>: <span data-f="speed"></span></div>' : ""}
-    <div class="line"><code data-f="pos"></code><button class=copyBtn data-copy="pos" data-lt="copy.coords">⧉</button></div>
+    <div class="line"><code data-f="pos"></code><button class=copyBtn data-copy="pos" data-lt="copy.coords"><svg viewBox="0 0 24 24" fill="currentColor">${ICONS.copy}</svg></button></div>
     ${kind === "drone" ? '<div class="zones" data-f="zones"></div>' : ""}`;
   applyLabels(el);
 
@@ -121,8 +110,9 @@ function createPopup(kind: "drone" | "pilot"): PopupView {
   el.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       await copyText(field(btn.dataset.copy!)?.textContent ?? "");
-      btn.textContent = "✓";
-      setTimeout(() => (btn.textContent = "⧉"), 1000);
+      const icon = btn.innerHTML;
+      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor">${ICONS.check}</svg>`;
+      setTimeout(() => (btn.innerHTML = icon), 1000);
     });
   });
 
@@ -207,8 +197,9 @@ function renderZoneLayer(zones: Zone[]) {
       onEachFeature: (f, layer) =>
         layer.bindPopup(zonePopup(f.properties as Zone), { maxWidth: 320 }),
     };
-    zonesLayer = L.geoJSON(undefined, opts).addTo(map);
-    layersControl?.addOverlay(zonesLayer, t("layer.zones"));
+    // Hidden unless switched on in the layers panel. Zone checks and alerts run either way
+    zonesLayer = L.geoJSON(undefined, opts);
+    showZoneLayer(props.showZones);
   }
   zonesLayer.clearLayers();
   for (const z of zones) {
@@ -418,53 +409,25 @@ onMounted(() => {
   map = L.map(el.value!, {
     // Draw paths well beyond the viewport so they aren't cut off while flying between drones
     renderer: L.svg({ padding: 2 }),
+    zoomControl: false,
   }).setView([54.69, 25.28], 7);
-  const osm = L.tileLayer(
-    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    {
+  L.control.zoom({ position: "bottomright" }).addTo(map);
+  const osm = (className?: string) =>
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: "&copy; OpenStreetMap contributors",
-    },
-  );
-  // OSM tiles darkened in CSS (.dark-tiles), no tile key needed
-  const dark = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: "&copy; OpenStreetMap contributors",
-    className: "dark-tiles",
-  });
-  const satellite = L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    { maxZoom: 19, attribution: "Tiles &copy; Esri" },
-  );
-
-  dark.addTo(map);
-  // Panels follow the base map: dark tokens on the dark map, light ones otherwise
-  map.on("baselayerchange", (e) => {
-    document.documentElement.dataset.theme = e.layer === dark ? "dark" : "light";
-  });
-  baseLayers = [
-    [dark, "layer.dark"],
-    [osm, "layer.map"],
-    [satellite, "layer.satellite"],
-  ];
-  layersControl = L.control
-    .layers(undefined, undefined, { position: "bottomright" })
-    .addTo(map);
-  labelLayers();
-
-  // Language select at the bottom of the layers popup
-  const list = layersControl
-    .getContainer()!
-    .querySelector<HTMLElement>(".leaflet-control-layers-list")!;
-  L.DomUtil.create("div", "leaflet-control-layers-separator", list);
-  langRow = L.DomUtil.create("label", "lang-select", list);
-  langRow.innerHTML = `<span data-l="layer.language"></span><select>${LANGS.map(
-    ([value, name]) => `<option value="${value}">${name}</option>`,
-  ).join("")}</select>`;
-  const select = langRow.querySelector("select")!;
-  select.value = lang.value;
-  select.addEventListener("change", () => (lang.value = select.value as Lang));
-  applyLabels(langRow);
+      className, // light/dark variants are OSM tiles recoloured in CSS, no tile key needed
+    });
+  baseLayers = {
+    light: osm("light-tiles"),
+    dark: osm("dark-tiles"),
+    map: osm(),
+    satellite: L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 19, attribution: "Tiles &copy; Esri" },
+    ),
+  };
+  showBase(props.base);
   if (props.zones.length) renderZoneLayer(props.zones);
   map.on("dragstart", () => {
     if (props.following) emit("unfollow"); // manual pan cancels follow
@@ -489,11 +452,11 @@ onMounted(() => {
 
 watch(() => props.detections, update);
 watch(() => props.zones, renderZoneLayer);
+watch(() => props.base, showBase);
+watch(() => props.showZones, showZoneLayer);
 
 // Leaflet content is plain DOM: relabel it when the language changes
 watch(lang, () => {
-  labelLayers();
-  if (langRow) applyLabels(langRow);
   for (const t of tracks.values()) {
     applyLabels(t.dronePopup.el);
     applyLabels(t.pilotPopup.el);
@@ -522,14 +485,29 @@ onBeforeUnmount(() => {
   background: none;
   border: none;
 }
-:deep(.lang-select) {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+/* Drone / pilot marker: disc in the drone colour with a white glyph */
+:deep(.rid-marker) {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(15, 30, 60, 0.35);
+}
+:deep(.rid-marker svg) {
+  width: 62%;
+  height: 62%;
 }
 :deep(.rid-popup) {
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.6;
+}
+:deep(.rid-popup b) {
+  font-family: var(--font-head);
+  font-size: 15px;
 }
 :deep(.rid-popup .line) {
   display: flex;
@@ -537,47 +515,51 @@ onBeforeUnmount(() => {
   gap: 4px;
 }
 :deep(.rid-popup code) {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   user-select: all;
 }
 :deep(.rid-popup button) {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
   border: 0;
+  border-radius: 50%;
   background: none;
   cursor: pointer;
-  padding: 0 4px;
-  border-radius: 4px;
-  font-size: 16px;
   color: var(--muted);
 }
+:deep(.rid-popup button svg) {
+  width: 14px;
+  height: 14px;
+}
 :deep(.rid-popup button:hover) {
-  background: var(--line);
-  color: var(--text-strong);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 :deep(.rid-popup .zones) {
-  margin-top: 4px;
-  padding-top: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
   border-top: 1px solid var(--line);
 }
 :deep(.rid-popup .zrow) {
-  padding-left: 8px;
-  border-left: 3px solid var(--faint);
-  margin: 2px 0;
+  margin: 3px 0;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--hover);
 }
 :deep(.rid-popup .zrow.PROHIBITED) {
-  border-color: var(--danger);
+  background: var(--danger-bg);
   color: var(--danger);
 }
-:deep(.rid-popup .zrow.REQ_AUTHORISATION) {
-  border-color: var(--warn);
-  color: var(--warn);
-}
+:deep(.rid-popup .zrow.REQ_AUTHORISATION),
 :deep(.rid-popup .zrow.above) {
-  border-color: var(--warn);
+  background: var(--warn-bg);
   color: var(--warn);
 }
 :deep(.rid-popup .zrow.ok) {
-  border-color: var(--ok);
+  background: var(--ok-bg);
   color: var(--ok);
 }
 :deep(.rid-popup .zmsg) {

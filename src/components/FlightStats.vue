@@ -3,6 +3,8 @@ import { computed, ref } from "vue";
 import { colorFor } from "../colors";
 import { locale, t, type MsgKey } from "../i18n";
 import { copyText } from "../export";
+import Icon from "./Icon.vue";
+import type { IconName } from "../icons";
 import { MAX_ALT_M } from "../config";
 import { fmtPos } from "../geo";
 import { fmtClock, fmtDuration, type TrackStats } from "../composables/useReplay";
@@ -21,6 +23,29 @@ function positions() {
   if (s.pilot) list.push(["pilot", "stats.pilotPos", s.pilot]);
   return list;
 }
+
+// Headline numbers, shown as icon tiles
+const tiles = computed(() => {
+  const s = props.s;
+  const list: { icon: IconName; label: string; value: string; alert?: boolean }[] = [
+    { icon: "timer", label: t("stats.flightTime"), value: fmtDuration(s.endTime - s.startTime) },
+    { icon: "speed", label: t("stats.maxSpeed"), value: `${(s.maxSpeed * 3.6).toFixed(0)} km/h` },
+    { icon: "distance", label: t("stats.distance"), value: `${(s.distance / 1000).toFixed(2)} km` },
+    { icon: "altitude", label: t("stats.maxAlt"), value: `${Math.round(s.maxAlt)} m` },
+    {
+      icon: "pilot",
+      label: t(s.fromTakeoff ? "stats.fromTakeoff" : "stats.fromPilot"),
+      value: `${Math.round(s.maxPilotDist)} m`,
+    },
+    {
+      icon: "warning",
+      label: t("stats.above", { m: MAX_ALT_M }),
+      value: fmtDuration(s.aboveMaxMs),
+      alert: !!s.aboveMaxMs,
+    },
+  ];
+  return list;
+});
 
 // Altitude chart: SVG in a fixed viewBox stretched to the card width
 const W = 300;
@@ -61,6 +86,15 @@ async function copy(key: string, text: string) {
 </script>
 
 <template>
+  <div class="tiles">
+    <div v-for="tile in tiles" :key="tile.icon" class="tile" :class="{ alert: tile.alert }">
+      <span class="ti"><Icon :name="tile.icon" /></span>
+      <span class="tv">
+        <span class="tl">{{ tile.label }}</span>
+        <span class="val">{{ tile.value }}</span>
+      </span>
+    </div>
+  </div>
   <div v-if="chart" class="alt">
     <div class="alt-head">
       <span>{{ t("stats.altitude") }}</span>
@@ -103,16 +137,6 @@ async function copy(key: string, text: string) {
     </div>
   </div>
   <dl>
-    <dt>{{ t("stats.maxSpeed") }}</dt>
-    <dd>{{ (s.maxSpeed * 3.6).toFixed(0) }} km/h</dd>
-    <dt>{{ t("stats.maxAlt") }}</dt>
-    <dd>{{ Math.round(s.maxAlt) }} m</dd>
-    <dt>{{ t("stats.above", { m: MAX_ALT_M }) }}</dt>
-    <dd :class="{ alert: s.aboveMaxMs }">{{ fmtDuration(s.aboveMaxMs) }}</dd>
-    <dt>{{ t(s.fromTakeoff ? "stats.fromTakeoff" : "stats.fromPilot") }}</dt>
-    <dd>{{ Math.round(s.maxPilotDist) }} m</dd>
-    <dt>{{ t("stats.distance") }}</dt>
-    <dd>{{ (s.distance / 1000).toFixed(2) }} km</dd>
     <dt>{{ t("stats.prohibited") }}</dt>
     <dd :class="{ alert: s.zoneEntries }">{{ s.zoneEntries ?? "–" }}</dd>
     <template v-for="(z, i) in s.zones" :key="i">
@@ -129,8 +153,6 @@ async function copy(key: string, text: string) {
         {{ fmtClock(s.endTime) }}
       </dd>
     </template>
-    <dt>{{ t("stats.flightTime") }}</dt>
-    <dd>{{ fmtDuration(s.endTime - s.startTime) }}</dd>
     <dt>{{ t("stats.gap") }}</dt>
     <dd>{{ fmtDuration(s.maxGap) }}</dd>
     <template v-for="[key, label, ll] in positions()" :key="key">
@@ -142,7 +164,7 @@ async function copy(key: string, text: string) {
           :title="t('copy.coords')"
           @click="copy(s.id + key, pos(ll))"
         >
-          {{ copied === s.id + key ? "✓" : "⧉" }}
+          <Icon :name="copied === s.id + key ? 'check' : 'copy'" />
         </button>
       </dd>
     </template>
@@ -150,8 +172,58 @@ async function copy(key: string, text: string) {
 </template>
 
 <style scoped>
+.tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 8px;
+  margin-bottom: 10px;
+}
+.tile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ti {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 16px;
+}
+.tile.alert .ti {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.tv {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tl {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.val {
+  font-weight: 600;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+.tile.alert .val {
+  color: var(--danger);
+}
 .alt {
-  margin-bottom: 6px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--hover);
   font-size: 12px;
 }
 .alt-head {
@@ -163,7 +235,7 @@ async function copy(key: string, text: string) {
 .plot {
   position: relative;
   height: 48px;
-  margin-top: 2px;
+  margin-top: 4px;
   touch-action: none; /* drag on touch screens scrubs instead of scrolling */
 }
 .plot svg {
@@ -216,12 +288,15 @@ dl {
   display: grid;
   grid-template-columns: auto 1fr;
   margin: 0;
+  padding: 2px 10px;
+  border-radius: 10px;
+  background: var(--hover);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 dt,
 dd {
-  padding: 3px 0;
+  padding: 5px 0;
   border-bottom: 1px solid var(--line);
 }
 dt:last-of-type,
@@ -237,10 +312,11 @@ dd {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  color: var(--text-strong);
 }
 dd code {
   white-space: nowrap;
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
 }
 dt.sub {
@@ -251,22 +327,22 @@ dd.alert {
   color: var(--danger);
   font-weight: 600;
 }
-/* Same look as the list's icon buttons */
 .copy {
   flex: none;
-  width: 26px;
-  height: 26px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
   margin: -4px -6px -4px 4px; /* keep row height */
   border: 0;
-  border-radius: 4px;
+  border-radius: 50%;
   background: none;
   cursor: pointer;
-  font: inherit;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--muted);
 }
 .copy:hover {
-  background: var(--line);
-  color: var(--text-strong);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 </style>
