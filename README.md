@@ -15,8 +15,8 @@ Live map of object positions from Remote ID detections, built with Vue 3, TypeSc
 - New object alerts, also kept in an alert log
 - Track history and the alert log are saved in the browser and survive page reloads
 - Fades objects after 10 s without updates, removes them after 60 s
-- Map, satellite map layers
-- English and Lithuanian interface; switch the language at the bottom of the layers control (bottom right). The choice is remembered; the default follows the browser language
+- Light (default), dark, full-colour and satellite base maps; panels switch to dark colours on the dark map
+- English and Lithuanian interface; switch the language in the layers panel (round button, bottom right). The choice is remembered; the default follows the browser language
 - Replay recorded tracks (CSV, GPX, KML) with play/pause, seek and speed control
 
 ## Flight stats
@@ -104,7 +104,7 @@ VITE_USE_MOCK=false npm run build
 
 When running `npm run dev`, the app loads Lithuanian UAS geographical zones from the ANS UTM map (`utm.ans.lt`) through the Vite dev server and:
 
-- draws them as a "Drone zones" layer (red: prohibited, amber: authorisation required, grey: information)
+- draws them as a "Drone zones" layer, off by default, switched on in the layers panel (red: prohibited, amber: authorisation required, grey: information)
 - checks each object: inside a zone horizontally and between the zone's lower and upper limit
 - flags objects above 120 m
 - alerts when an object enters a prohibited zone or goes above 120 m
@@ -123,6 +123,7 @@ src/
   i18n.ts                         # English / Lithuanian texts, language switch
   config.ts                       # polling, fade and removal timings
   colors.ts                       # per-object colors
+  icons.ts                        # SVG icons used across the UI
   export.ts                       # GPX / KML / CSV export
   mock/detections.ts              # simulated objects
   composables/useDetections.ts    # 1 s polling
@@ -138,6 +139,8 @@ src/
   components/FlightStats.vue      # flight stats under a list item
   components/ToastStack.vue       # alert messages
   components/ReplayPanel.vue      # replay controls
+  components/LayersPanel.vue      # base map, zones layer and language picker
+  components/Icon.vue             # renders an icon from icons.ts
   App.vue
 ```
 
