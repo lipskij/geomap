@@ -164,11 +164,12 @@ function onDrop(e: DragEvent) {
   emit("addSensor", type, p.lat, p.lng);
 }
 
-// Show the whole plan (after importing one)
+// Show the whole plan, coverage circles included (after importing one)
 function fitSensors() {
   if (!map || !props.sensors.length) return;
-  const b = L.latLngBounds(props.sensors.map((s) => [s.lat, s.lng] as L.LatLngTuple));
-  map.fitBounds(b.pad(0.3), { paddingBottomRight: [inset(), 0], maxZoom: 16 });
+  const b = L.latLngBounds([]);
+  for (const s of props.sensors) b.extend(L.latLng(s.lat, s.lng).toBounds(rangeOf(s) * 2));
+  map.fitBounds(b, { paddingTopLeft: [10, 10], paddingBottomRight: [inset() + 10, 10], maxZoom: 16 });
 }
 
 function panTo(lat: number, lng: number) {

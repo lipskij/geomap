@@ -16,7 +16,7 @@ Live map of object positions from Remote ID detections, built with Vue 3, TypeSc
 - Track history and the alert log are saved in the browser and survive page reloads
 - Fades objects after 10 s without updates, removes them after 60 s
 - Light (default), dark, full-colour and satellite base maps; panels switch to dark colours on the dark map
-- Sensor planner (**Planner** tab, top left): drag Remote ID, acoustic, camera and thermal sensors onto the map; coverage circles use a default radius per type. **Show live drones and alerts** (off by default) brings back monitoring while planning. **Coverage overlap** shades where 2 (amber) or 3+ (green, enough to triangulate) sensors cover the same spot, for all types or one. Plans download as a CSV deployment list or a JSON plan file; Import reads either. Saved in the browser (`localStorage`); build with `VITE_PLANS_BACKEND=true` to load and save `GET`/`PUT /api/plans/current` on the backend (a local copy is always kept)
+- Sensor planner: place Remote ID, acoustic, camera and thermal sensors on the map, see where their coverage overlaps, and export a deployment list (see [Sensor planner](#sensor-planner))
 - English and Lithuanian interface; switch the language in the layers panel (round button, bottom right). The choice is remembered; the default follows the browser language
 - Replay recorded tracks (CSV, GPX, KML) with play/pause, seek and speed control
 
@@ -48,6 +48,19 @@ For replayed tracks, stats cover the whole file.
 ## Alerts
 
 Every message shown as a pop-up (new object, prohibited zone entry, above 120 m) is also added to the **Alerts** section at the bottom of the object list, newest first. Click an alert to focus its object; alerts of objects no longer on the map are greyed out. The log can be exported as CSV or cleared. It keeps the last 500 alerts and is saved in the browser (`localStorage`).
+
+## Sensor planner
+
+Switch to **Planner** (top left) to plan where sensors should go. Live drones, alerts and the replay panel are hidden while planning; **Show live drones and alerts** brings them back. Planned sensors are only shown in Planner mode.
+
+- Drag a sensor type (Remote ID, acoustic, camera, thermal) onto the map, or click it and then click the map. Drag placed sensors to move them
+- Each sensor has a coverage circle with a default radius per type: Remote ID 1000 m, acoustic 300 m, camera 800 m, thermal 600 m (per-sensor values will come with the real sensor list)
+- **Coverage overlap** shades where 2 sensors (amber) or 3+ sensors (green, enough to triangulate) cover the same spot, for all types or one type. Each sensor in the list shows how many others it overlaps
+- The list counts sensors per type: the deployment list for the field team
+- **Download** offers CSV (deployment list: `id,type,lat,lng,range_m`) or JSON (plan file with its name). **Import** reads either; unknown types and invalid positions are skipped
+- The plan is saved in the browser (`localStorage`). Build with `VITE_PLANS_BACKEND=true` to load and save it via `GET`/`PUT /api/plans/current` on the backend; a local copy is always kept, and a failed save shows an error instead of losing the plan
+
+![Sensor planner](docs/images/planner.jpg)
 
 ## Saved history
 
