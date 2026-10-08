@@ -117,7 +117,9 @@ function doExport(id: string, f: ExportFormat) {
           <button
             class="action"
             :class="{ active: following === d.basic_id }"
-            :title="t(following === d.basic_id ? 'list.unfollow' : 'list.follow')"
+            :title="
+              t(following === d.basic_id ? 'list.unfollow' : 'list.follow')
+            "
             @click="toggleFollow(d.basic_id)"
           >
             <Icon name="follow" />
@@ -192,7 +194,6 @@ function doExport(id: string, f: ExportFormat) {
         <span class="age">{{ fmtClock(a.time) }}</span>
       </button>
     </div>
-
   </section>
 </template>
 
@@ -369,7 +370,7 @@ function doExport(id: string, f: ExportFormat) {
 .tools {
   display: flex;
   gap: 6px;
-  padding: 0 16px 8px;
+  padding: 8px 16px 8px;
 }
 .alert-row {
   width: calc(100% - 16px);
