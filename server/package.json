@@ -1,0 +1,12 @@
+{
+  "name": "geomap-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env index.ts"
+  },
+  "dependencies": {
+    "mqtt": "^5.10.0",
+    "pg": "^8.13.0"
+  }
+}
