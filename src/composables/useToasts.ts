@@ -2,6 +2,7 @@ import { ref, watch, type Ref } from "vue";
 import type { Detection } from "../types";
 import { TOAST_MS } from "../config";
 import type { MsgKey, Params } from "../i18n";
+import { REPLAY_PREFIX } from "./useReplay";
 
 export type ToastKind = "info" | "alert";
 
@@ -56,6 +57,8 @@ export function useToasts(drones: Ref<Detection[]>) {
     params?: Params,
     kind: ToastKind = "info",
   ) {
+    // Replayed drones are past flights: no toasts, nothing in the alert log
+    if (droneId.startsWith(REPLAY_PREFIX)) return;
     const key = nextKey++;
     const toast = { key, droneId, msg, params, kind };
     toasts.value = [...toasts.value, toast].slice(-MAX_TOASTS);
