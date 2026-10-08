@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import Icon from "./Icon.vue";
 import {
+  mastOf,
   rangeOf,
   SENSOR_TYPES,
   type Plan,
@@ -10,7 +11,7 @@ import {
 } from "../composables/useSensors";
 import { downloadPlan, exportSensors } from "../export";
 import { distanceM, fmtPos } from "../geo";
-import { parsePlan, parsePlanCsv } from "../plans";
+import { MAX_MAST_M, parsePlan, parsePlanCsv } from "../plans";
 import { t, type MsgKey } from "../i18n";
 
 const props = defineProps<{
@@ -25,6 +26,7 @@ const emit = defineEmits<{
   pick: [type: SensorType | null];
   select: [s: Sensor];
   remove: [id: number];
+  mast: [id: number, m: number];
   clear: [];
   rename: [name: string];
   overlap: [value: SensorType | "all" | null];
@@ -59,6 +61,14 @@ function overlaps(s: Sensor): number | null {
 function onDragStart(e: DragEvent, type: SensorType) {
   e.dataTransfer?.setData("text/x-sensor", type);
   if (e.dataTransfer) e.dataTransfer.effectAllowed = "copy";
+}
+
+// Mount height edits: out-of-range or empty input snaps back to the stored value
+function onMast(s: Sensor, e: Event) {
+  const input = e.target as HTMLInputElement;
+  const m = input.valueAsNumber;
+  if (m >= 0 && m <= MAX_MAST_M) emit("mast", s.id, m);
+  else input.value = String(mastOf(s));
 }
 
 function onClear() {
@@ -195,6 +205,18 @@ async function onImport(e: Event) {
             </span>
           </span>
         </button>
+        <label class="mast" :title="t('plan.mast')">
+          <input
+            type="number"
+            min="0"
+            :max="MAX_MAST_M"
+            step="1"
+            :value="mastOf(s)"
+            :aria-label="t('plan.mast')"
+            @change="onMast(s, $event)"
+          />
+          m
+        </label>
         <button class="action" :title="t('plan.remove')" @click="emit('remove', s.id)">
           <Icon name="trash" />
         </button>
@@ -444,6 +466,28 @@ code {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--muted);
+}
+.mast {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.mast input {
+  width: 46px;
+  padding: 3px 4px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text-strong);
+  font: 600 12px var(--font);
+  text-align: right;
+}
+.mast input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 .action {
   flex: none;

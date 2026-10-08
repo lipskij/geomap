@@ -252,6 +252,7 @@ function onExport(id: string, format: ExportFormat) {
     @pick="(type) => (placing = type)"
     @select="(s) => mapView?.panTo(s.lat, s.lng)"
     @remove="plan.remove"
+    @mast="plan.setMast"
     @clear="plan.clear"
     @rename="(n) => (plan.name.value = n)"
     @overlap="(v) => (overlap = v)"

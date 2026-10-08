@@ -8,6 +8,7 @@ import { validPos } from "./geo";
 const BACKEND = import.meta.env.VITE_PLANS_BACKEND === "true";
 const KEY = "geomap.plan";
 const PLAN_URL = `${API_URL}/api/plans/current`;
+export const MAX_MAST_M = 300; // mount heights above this are rejected as typos
 
 export function loadLocal(): Plan | null {
   try {
@@ -49,7 +50,7 @@ export function planJson(plan: Plan): string {
     {
       version: 1,
       name: plan.name,
-      sensors: plan.sensors.map(({ id, type, lat, lng }) => ({ id, type, lat, lng })),
+      sensors: plan.sensors.map(({ id, type, lat, lng, mastM }) => ({ id, type, lat, lng, mastM })),
     },
     null,
     2,
@@ -57,15 +58,24 @@ export function planJson(plan: Plan): string {
 }
 
 // Validates untrusted input (imported files, server responses); skips unknown sensor
-// types and bad positions
-function toSensors(rows: { type?: unknown; lat?: unknown; lng?: unknown }[]): Sensor[] {
+// types and bad positions; a missing or invalid mount height falls back to the default
+function toSensors(
+  rows: { type?: unknown; lat?: unknown; lng?: unknown; mastM?: unknown }[],
+): Sensor[] {
   const sensors: Sensor[] = [];
   for (const s of rows) {
     if (!s || typeof s.type !== "string" || !(s.type in SENSOR_TYPES)) continue;
     const lat = Number(s.lat);
     const lng = Number(s.lng);
     if (!validPos(lat, lng)) continue;
-    sensors.push({ id: sensors.length + 1, type: s.type as Sensor["type"], lat, lng });
+    const mast = s.mastM === "" || s.mastM == null ? NaN : Number(s.mastM);
+    sensors.push({
+      id: sensors.length + 1,
+      type: s.type as Sensor["type"],
+      lat,
+      lng,
+      ...(mast >= 0 && mast <= MAX_MAST_M && { mastM: mast }),
+    });
   }
   return sensors;
 }
@@ -79,16 +89,16 @@ export function parsePlan(text: string): Plan {
   };
 }
 
-// The CSV deployment list (id,type,lat,lng,range_m); columns found by header name.
+// The CSV deployment list (id,type,lat,lng,range_m,mast_m); columns found by header name.
 // Radii in the file are ignored: they come from the sensor type
 export function parsePlanCsv(text: string): Plan {
   const [head, ...lines] = text.trim().split(/\r?\n/);
   const cols = head.split(",").map((c) => c.trim().toLowerCase());
-  const [ti, la, ln] = ["type", "lat", "lng"].map((c) => cols.indexOf(c));
+  const [ti, la, ln, ma] = ["type", "lat", "lng", "mast_m"].map((c) => cols.indexOf(c));
   if (ti < 0 || la < 0 || ln < 0) throw new Error("CSV needs type, lat and lng columns");
   const rows = lines.map((l) => {
     const v = l.split(",").map((c) => c.trim());
-    return { type: v[ti], lat: v[la], lng: v[ln] };
+    return { type: v[ti], lat: v[la], lng: v[ln], mastM: ma < 0 ? undefined : v[ma] };
   });
   return { name: "", sensors: toSensors(rows) };
 }

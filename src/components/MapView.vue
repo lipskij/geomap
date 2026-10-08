@@ -8,7 +8,7 @@ import { fmtPos, validPos } from "../geo";
 import { FADE_SECONDS, GAP_SECONDS, MAX_ALT_M, STALE_SECONDS } from "../config";
 import { REPLAY_PREFIX } from "../composables/useReplay";
 import type { Restriction, Zone, ZoneCheck } from "../zones";
-import { rangeOf, SENSOR_TYPES, type Sensor, type SensorType } from "../composables/useSensors";
+import { mastOf, rangeOf, SENSOR_TYPES, type Sensor, type SensorType } from "../composables/useSensors";
 import { overlapImage } from "../coverage";
 import { elevation, loadTerrain } from "../terrain";
 import { lang, t, type MsgKey } from "../i18n";
@@ -103,7 +103,13 @@ async function drawOverlap() {
   const pick = props.overlap;
   const circles = props.sensors
     .filter((s) => pick === "all" || s.type === pick)
-    .map((s) => ({ lat: s.lat, lng: s.lng, range: rangeOf(s) }));
+    .map((s) => ({
+      lat: s.lat,
+      lng: s.lng,
+      range: rangeOf(s),
+      mastM: mastOf(s),
+      throughTerrain: !SENSOR_TYPES[s.type].lineOfSight,
+    }));
   await loadTerrain(
     circles.map((c) => {
       const b = L.latLng(c.lat, c.lng).toBounds(c.range * 2);

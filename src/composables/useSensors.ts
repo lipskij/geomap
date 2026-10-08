@@ -1,6 +1,7 @@
 import { ref, watch } from "vue";
 import type { IconName } from "../icons";
 import { loadLocal, loadRemote, savePlan } from "../plans";
+import { SENSOR_MAST_M } from "../coverage";
 
 export type SensorType = "rid" | "audio" | "video";
 
@@ -9,6 +10,7 @@ export interface Sensor {
   type: SensorType;
   lat: number;
   lng: number;
+  mastM?: number; // mount height above ground (mast, roof); default SENSOR_MAST_M
 }
 
 export interface Plan {
@@ -17,14 +19,18 @@ export interface Plan {
 }
 
 // ponytail: rough default detection ranges per type; per-sensor values come later
-// with the real sensor list
-export const SENSOR_TYPES: Record<SensorType, { icon: IconName; color: string; range: number }> = {
-  rid: { icon: "sensors", color: "#1f7ae0", range: 1000 },
-  audio: { icon: "mic", color: "#8e44ad", range: 300 },
-  video: { icon: "videocam", color: "#0f9d8a", range: 800 },
+// with the real sensor list. lineOfSight: hills hide drones from it (sound bends around them)
+export const SENSOR_TYPES: Record<
+  SensorType,
+  { icon: IconName; color: string; range: number; lineOfSight: boolean }
+> = {
+  rid: { icon: "sensors", color: "#1f7ae0", range: 1000, lineOfSight: true },
+  audio: { icon: "mic", color: "#8e44ad", range: 300, lineOfSight: false },
+  video: { icon: "videocam", color: "#0f9d8a", range: 800, lineOfSight: true },
 };
 
 export const rangeOf = (s: Sensor) => SENSOR_TYPES[s.type].range;
+export const mastOf = (s: Sensor) => s.mastM ?? SENSOR_MAST_M;
 
 const SAVE_DELAY_MS = 800; // batch quick edits (e.g. several placements) into one save
 
@@ -70,6 +76,10 @@ export function useSensors() {
     move(id: number, lat: number, lng: number) {
       const s = sensors.value.find((s) => s.id === id);
       if (s) Object.assign(s, { lat, lng });
+    },
+    setMast(id: number, m: number) {
+      const s = sensors.value.find((s) => s.id === id);
+      if (s) s.mastM = m;
     },
     remove(id: number) {
       sensors.value = sensors.value.filter((s) => s.id !== id);

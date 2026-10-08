@@ -4,6 +4,8 @@ export interface Circle {
   lat: number;
   lng: number;
   range: number; // m
+  mastM?: number; // sensor height above ground, default SENSOR_MAST_M
+  throughTerrain?: boolean; // terrain doesn't hide drones from it (acoustic)
 }
 
 const M_PER_DEG = 111_320;
@@ -18,20 +20,21 @@ const SHADE: Record<0 | 2 | 3, [number, number, number, number]> = {
 };
 
 // Line of sight from a sensor mast to a drone flying TARGET_AGL_M above the ground.
-// ponytail: same heights for every type and plan; make them per sensor with the real
-// sensor list. Acoustic is treated like the others though sound bends around hills
-export const SENSOR_MAST_M = 3;
+// Higher drones are seen wherever a TARGET_AGL_M one is, and often more
+export const SENSOR_MAST_M = 3; // default mount height, editable per sensor
 export const TARGET_AGL_M = 30; // low flyers are the ones terrain hides
 const RAYS = 360;
 const STEP_M = 20; // ≈ terrain pixel size
+// Earth radius bent by standard atmospheric refraction (k = 4/3, the usual radio value)
+const R_EFF_M = (6_371_000 * 4) / 3;
 
 export type Elevation = (lat: number, lng: number) => number; // m, NaN = unknown
 
 // Visibility test for points around one sensor: rays out from the sensor, a point is seen
 // when the drone above it rises over every terrain point between it and the sensor.
-// Earth curvature ignored (8 cm at 1 km)
+// Ground falls away by d²/2R with distance (Earth curvature)
 export function lineOfSight(c: Circle, elev: Elevation, mLng: number) {
-  const h0 = elev(c.lat, c.lng) + SENSOR_MAST_M;
+  const h0 = elev(c.lat, c.lng) + (c.mastM ?? SENSOR_MAST_M);
   if (Number.isNaN(h0)) return () => true;
   const steps = Math.ceil(c.range / STEP_M) + 1;
   const seen = new Uint8Array(RAYS * steps);
@@ -42,7 +45,7 @@ export function lineOfSight(c: Circle, elev: Elevation, mLng: number) {
     seen[r * steps] = 1;
     for (let i = 1; i < steps; i++) {
       const d = i * STEP_M;
-      const g = elev(c.lat + d * north, c.lng + d * east);
+      const g = elev(c.lat + d * north, c.lng + d * east) - (d * d) / (2 * R_EFF_M);
       // NaN ground: unknown, counts as seen and doesn't raise the horizon
       if (!((g + TARGET_AGL_M - h0) / d < horizon)) seen[r * steps + i] = 1;
       const slope = (g - h0) / d;
@@ -81,7 +84,7 @@ export function overlapImage(
   const cols = Math.ceil(widthM / cell);
   const rows = Math.ceil(heightM / cell);
 
-  const sees = circles.map((c) => lineOfSight(c, elev, mLng));
+  const sees = circles.map((c) => (c.throughTerrain ? () => true : lineOfSight(c, elev, mLng)));
 
   const canvas = document.createElement("canvas");
   canvas.width = cols;
