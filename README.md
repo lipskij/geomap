@@ -24,18 +24,18 @@ Live map of object positions from Remote ID detections, built with Vue 3, TypeSc
 
 Click an object in the list to open its flight stats; click it again to close them.
 
-| Stat | Meaning |
-| --- | --- |
-| Altitude chart | Altitude over time with the 120 m limit; hover for time and altitude |
-| Max speed, Max alt | Highest recorded values |
-| Above 120 m | Time spent above the altitude limit |
-| Max from pilot | Farthest distance from the pilot. Shown as "Max from takeoff" when the track has no pilot position |
-| Distance | Total distance flown |
-| Prohibited entries | Number of entries into prohibited zones, with the time spent in each zone. Shows "–" when zone data isn't loaded |
-| Started, Ended | Local time of the first and last recorded point (full date on hover) |
-| Flight time | Time between the first and last point |
-| Longest signal gap | Longest time between two recorded points |
-| Start pos, End pos, Pilot pos | Coordinates, with a copy button |
+| Stat                          | Meaning                                                                                                          |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Altitude chart                | Altitude over time with the 120 m limit; hover for time and altitude                                             |
+| Max speed, Max alt            | Highest recorded values                                                                                          |
+| Above 120 m                   | Time spent above the altitude limit                                                                              |
+| Max from pilot                | Farthest distance from the pilot. Shown as "Max from takeoff" when the track has no pilot position               |
+| Distance                      | Total distance flown                                                                                             |
+| Prohibited entries            | Number of entries into prohibited zones, with the time spent in each zone. Shows "–" when zone data isn't loaded |
+| Started, Ended                | Local time of the first and last recorded point (full date on hover)                                             |
+| Flight time                   | Time between the first and last point                                                                            |
+| Longest signal gap            | Longest time between two recorded points                                                                         |
+| Start pos, End pos, Pilot pos | Coordinates, with a copy button                                                                                  |
 
 For live objects, stats are calculated from the history recorded since the object was first seen. They update with every poll. Ended and End pos are not shown because the flight is still in progress.
 
@@ -63,10 +63,6 @@ Switch to **Planner** (top left) to plan where sensors should go. Live drones, a
 
 ![Sensor planner](docs/images/planner.jpg)
 
-## Saved history
-
-Live track history is saved in the browser (IndexedDB) every 5 s, so exports and flight stats keep the full flight after a reload. Paths of objects still in the air are redrawn on the map. Tracks without updates for 24 hours are removed when the app starts. The history is stored per browser and is not shared between devices.
-
 ## Requirements
 
 Node.js 20.19+ or 22.12+
@@ -90,21 +86,21 @@ npm run dev
   "uav longitude": -0.0013,
   "uav altitude": 110,
   "uav speed": 0,
-  "base latitude": 51.4790,
-  "base longitude": -0.0010,
+  "base latitude": 51.479,
+  "base longitude": -0.001,
   "unix time": 1574357589,
   "received": 1790000000
 }
 ```
 
-| Field                               | Maps to                     | Unit               |
-| ----------------------------------- | --------------------------- | ------------------ |
-| `uav id`                            | `basic_id`                  |                    |
-| `uav latitude` / `uav longitude`    | `drone_lat` / `drone_long`  | degrees            |
-| `uav altitude`                      | `drone_altitude`            | m                  |
-| `uav speed`                         | `drone_speed`               | m/s, horizontal    |
-| `base latitude` / `base longitude`  | `pilot_lat` / `pilot_long`  | degrees            |
-| `received`                          | `last_update`               | Unix time, seconds |
+| Field                              | Maps to                    | Unit               |
+| ---------------------------------- | -------------------------- | ------------------ |
+| `uav id`                           | `basic_id`                 |                    |
+| `uav latitude` / `uav longitude`   | `drone_lat` / `drone_long` | degrees            |
+| `uav altitude`                     | `drone_altitude`           | m                  |
+| `uav speed`                        | `drone_speed`              | m/s, horizontal    |
+| `base latitude` / `base longitude` | `pilot_lat` / `pilot_long` | degrees            |
+| `received`                         | `last_update`              | Unix time, seconds |
 
 Other fields (`unix time`, `mac`, `operator`, `self id`, `uav heading`, `seconds`, auth pages) are ignored for now.
 
@@ -112,11 +108,11 @@ Other fields (`unix time`, `mac`, `operator`, `self id`, `uav heading`, `seconds
 
 Mock data is on by default. Settings (environment variables at build / dev time):
 
-| Variable        | Meaning                                                              |
-| --------------- | -------------------------------------------------------------------- |
-| `VITE_USE_MOCK` | `false` reads the real API                                           |
-| `VITE_API_URL`  | backend origin, e.g. `https://api.example.com`; empty = same origin  |
-| `API_TARGET`    | dev only: Vite forwards `/api/*` to this backend                     |
+| Variable        | Meaning                                                             |
+| --------------- | ------------------------------------------------------------------- |
+| `VITE_USE_MOCK` | `false` reads the real API                                          |
+| `VITE_API_URL`  | backend origin, e.g. `https://api.example.com`; empty = same origin |
+| `API_TARGET`    | dev only: Vite forwards `/api/*` to this backend                    |
 
 ```bash
 # local dev against a backend on port 8000
