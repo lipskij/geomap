@@ -3,9 +3,13 @@
 export type Rings = number[][][]; // [outer, ...holes]
 export type BBox = [number, number, number, number]; // minLng, minLat, maxLng, maxLat
 
-// Finite and not the 0,0 "no fix" placeholder
+// Finite, on the globe, and not the 0,0 "no fix" placeholder
 export const validPos = (lat?: number, lng?: number) =>
-  Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+  Number.isFinite(lat) &&
+  Number.isFinite(lng) &&
+  Math.abs(lat!) <= 90 &&
+  Math.abs(lng!) <= 180 &&
+  !(lat === 0 && lng === 0);
 
 export const fmtPos = (lat: number, lng: number) =>
   `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
@@ -51,4 +55,20 @@ export function inPolygon(
   if (lng < a || lng > c || lat < b || lat > d) return false;
   if (!inRing(lng, lat, rings[0])) return false;
   return !rings.slice(1).some((hole) => inRing(lng, lat, hole));
+}
+
+const R = 6_371_000; // earth radius, m
+const rad = (d: number) => (d * Math.PI) / 180;
+
+// Great-circle distance (haversine)
+export function distanceM(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
 }

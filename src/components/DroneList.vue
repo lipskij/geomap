@@ -204,7 +204,7 @@ function doExport(id: string, f: ExportFormat) {
   z-index: 1000;
   width: 320px;
   max-width: calc(100vw - 20px);
-  max-height: calc(100vh - 20px);
+  max-height: calc(100vh - 220px); /* keeps the zoom and layers buttons below it visible */
   display: flex;
   flex-direction: column;
   background: var(--panel);

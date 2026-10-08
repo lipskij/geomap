@@ -16,6 +16,7 @@ Live map of object positions from Remote ID detections, built with Vue 3, TypeSc
 - Track history and the alert log are saved in the browser and survive page reloads
 - Fades objects after 10 s without updates, removes them after 60 s
 - Light (default), dark, full-colour and satellite base maps; panels switch to dark colours on the dark map
+- Sensor planner (**Planner** tab, top left): drag Remote ID, acoustic, camera and thermal sensors onto the map; coverage circles use a default radius per type. **Show live drones and alerts** (off by default) brings back monitoring while planning. **Show overlap** shades where 2 (amber) or 3+ (green, enough to triangulate) sensors cover the same spot, for all types or one. Plans download as a CSV deployment list or a JSON plan file; Import reads either. Saved in the browser (`localStorage`); build with `VITE_PLANS_BACKEND=true` to load and save `GET`/`PUT /api/plans/current` on the backend (a local copy is always kept)
 - English and Lithuanian interface; switch the language in the layers panel (round button, bottom right). The choice is remembered; the default follows the browser language
 - Replay recorded tracks (CSV, GPX, KML) with play/pause, seek and speed control
 
@@ -144,6 +145,9 @@ src/
   composables/useDetections.ts    # 1 s polling
   composables/useTrackHistory.ts  # track history (saved in IndexedDB) for export and live flight stats
   composables/useZones.ts         # zone loading and refresh
+  composables/useSensors.ts       # current sensor plan, sensor types and default ranges
+  plans.ts                        # plan storage (browser / backend), plan file format and validation
+  coverage.ts                     # overlap shading of sensor coverage
   composables/useToasts.ts        # new object and zone alerts, alert log
   composables/useReplay.ts        # replay playback, flight stats calculation
   replay/parse.ts                 # CSV / GPX / KML track parsing
@@ -155,6 +159,7 @@ src/
   components/ToastStack.vue       # alert messages
   components/ReplayPanel.vue      # replay controls
   components/LayersPanel.vue      # base map, zones layer and language picker
+  components/PlannerPanel.vue     # sensor planner: palette, placed sensors, CSV export
   components/Icon.vue             # renders an icon from icons.ts
   App.vue
 ```

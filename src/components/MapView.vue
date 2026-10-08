@@ -8,6 +8,8 @@ import { fmtPos, validPos } from "../geo";
 import { FADE_SECONDS, GAP_SECONDS, MAX_ALT_M, STALE_SECONDS } from "../config";
 import { REPLAY_PREFIX } from "../composables/useReplay";
 import type { Restriction, Zone, ZoneCheck } from "../zones";
+import { rangeOf, SENSOR_TYPES, type Sensor, type SensorType } from "../composables/useSensors";
+import { overlapImage } from "../coverage";
 import { lang, t, type MsgKey } from "../i18n";
 import { ICONS } from "../icons";
 
@@ -21,8 +23,17 @@ const props = defineProps<{
   rightInset: number; // px of the map covered by the panel on the right
   base: BaseLayer;
   showZones: boolean;
+  sensors: Sensor[];
+  planning: boolean; // planner mode: sensors can be dropped, placed and dragged
+  placing: SensorType | null; // type picked in the planner; next map click places it
+  overlap: SensorType | "all" | null; // shade where these sensors' ranges overlap; null = off
+  showDrones: boolean; // false hides drone markers and paths (they keep updating)
 }>();
-const emit = defineEmits<{ unfollow: [] }>();
+const emit = defineEmits<{
+  unfollow: [];
+  addSensor: [type: SensorType, lat: number, lng: number];
+  moveSensor: [id: number, lat: number, lng: number];
+}>();
 
 interface PopupView {
   el: HTMLElement;
@@ -46,6 +57,21 @@ let zoomedToFirst = false;
 let moving = false; // true while the map is panning/zooming
 let pending: Detections | null = null; // latest data received mid-move
 let zonesLayer: L.GeoJSON | null = null;
+// Drones get their own panes, so hiding them is one style change and their paths survive
+let pathRenderer: L.Renderer | undefined;
+// Same for planned sensors: only shown in planner mode
+let sensorRenderer: L.Renderer | undefined;
+
+function showSensorPanes(on: boolean) {
+  if (!map) return;
+  for (const pane of ["sensors", "sensorAreas"]) map.getPane(pane)!.style.display = on ? "" : "none";
+}
+
+function showDronePanes(on: boolean) {
+  if (!map) return;
+  for (const pane of ["drones", "dronePaths"]) map.getPane(pane)!.style.display = on ? "" : "none";
+  if (!on) map.closePopup();
+}
 let baseLayers: Record<BaseLayer, L.TileLayer> | null = null;
 
 function showBase(key: BaseLayer) {
@@ -60,6 +86,108 @@ function showZoneLayer(on: boolean) {
   else zonesLayer.remove();
 }
 const tracks = new Map<string, Track>();
+
+// Planned sensors: square marker + coverage circle, kept in sync with props.sensors
+const sensorLayers = new Map<number, { marker: L.Marker; circle: L.Circle }>();
+let overlapLayer: L.ImageOverlay | null = null;
+
+// Shaded overlap of coverage circles (planner only), redrawn when the plan changes
+function drawOverlap() {
+  overlapLayer?.remove();
+  overlapLayer = null;
+  if (!map || !props.planning || !props.overlap) return;
+  const pick = props.overlap;
+  const img = overlapImage(
+    props.sensors
+      .filter((s) => pick === "all" || s.type === pick)
+      .map((s) => ({ lat: s.lat, lng: s.lng, range: rangeOf(s) })),
+  );
+  if (!img) return;
+  overlapLayer = L.imageOverlay(img.url, img.bounds, {
+    opacity: 1,
+    interactive: false,
+    pane: "sensorAreas",
+  }).addTo(map);
+  overlapLayer.bringToBack();
+}
+
+function sensorIcon(type: SensorType): L.DivIcon {
+  const { icon, color } = SENSOR_TYPES[type];
+  return L.divIcon({
+    className: "rid-icon",
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+    html: `<span class="sensor-marker" style="background:${color}"><svg viewBox="0 0 24 24" fill="currentColor">${ICONS[icon]}</svg></span>`,
+  });
+}
+
+function syncSensors() {
+  if (!map) return;
+  const ids = new Set(props.sensors.map((s) => s.id));
+  for (const [id, l] of sensorLayers) {
+    if (ids.has(id)) continue;
+    l.marker.remove();
+    l.circle.remove();
+    sensorLayers.delete(id);
+  }
+  for (const s of props.sensors) {
+    let l = sensorLayers.get(s.id);
+    if (!l) {
+      const color = SENSOR_TYPES[s.type].color;
+      const circle = L.circle([s.lat, s.lng], {
+        radius: rangeOf(s),
+        color,
+        weight: 1.5,
+        dashArray: "5,5",
+        fillOpacity: 0.08,
+        interactive: false,
+        renderer: sensorRenderer,
+      }).addTo(map);
+      const marker = L.marker([s.lat, s.lng], {
+        icon: sensorIcon(s.type),
+        draggable: true,
+        pane: "sensors",
+      }).addTo(map);
+      const id = s.id;
+      marker.on("drag", () => circle.setLatLng(marker.getLatLng()));
+      marker.on("dragend", () => {
+        const p = marker.getLatLng();
+        emit("moveSensor", id, p.lat, p.lng);
+      });
+      l = { marker, circle };
+      sensorLayers.set(s.id, l);
+    }
+    l.marker.setLatLng([s.lat, s.lng]);
+    l.circle.setLatLng([s.lat, s.lng]).setRadius(rangeOf(s));
+    if (props.planning) l.marker.dragging?.enable();
+    else l.marker.dragging?.disable();
+  }
+}
+
+// Sensor dragged from the planner palette and dropped on the map
+function onDragOver(e: DragEvent) {
+  if (props.planning && e.dataTransfer?.types.includes("text/x-sensor")) e.preventDefault();
+}
+function onDrop(e: DragEvent) {
+  const type = e.dataTransfer?.getData("text/x-sensor") as SensorType;
+  if (!map || !props.planning || !SENSOR_TYPES[type]) return;
+  e.preventDefault();
+  const p = map.mouseEventToLatLng(e);
+  emit("addSensor", type, p.lat, p.lng);
+}
+
+// Show the whole plan (after importing one)
+function fitSensors() {
+  if (!map || !props.sensors.length) return;
+  const b = L.latLngBounds(props.sensors.map((s) => [s.lat, s.lng] as L.LatLngTuple));
+  map.fitBounds(b.pad(0.3), { paddingBottomRight: [inset(), 0], maxZoom: 16 });
+}
+
+function panTo(lat: number, lng: number) {
+  map?.flyTo(visibleCenter([lat, lng], Math.max(map.getZoom(), 15)), Math.max(map.getZoom(), 15), {
+    duration: 0.6,
+  });
+}
 
 function droneIcon(color: string): L.DivIcon {
   return L.divIcon({
@@ -224,7 +352,7 @@ function upsertMarker(
     existing.setLatLng(pos);
     return existing;
   }
-  return L.marker(pos, { icon })
+  return L.marker(pos, { icon, pane: "drones" })
     .bindPopup(popup.el, { autoPanPaddingBottomRight: [inset() + 10, 10] })
     .addTo(map!);
 }
@@ -305,13 +433,19 @@ function update(detections: Detections) {
     let t = tracks.get(id);
     if (!t) {
       t = {
-        dronePath: L.polyline([], { color, weight: 3 }).addTo(map),
-        gapPath: L.polyline([], { color, weight: 2, dashArray: "2,6" }).addTo(
-          map,
-        ),
-        pilotPath: L.polyline([], { color, weight: 2, dashArray: "5,5" }).addTo(
-          map,
-        ),
+        dronePath: L.polyline([], { color, weight: 3, renderer: pathRenderer }).addTo(map),
+        gapPath: L.polyline([], {
+          color,
+          weight: 2,
+          dashArray: "2,6",
+          renderer: pathRenderer,
+        }).addTo(map),
+        pilotPath: L.polyline([], {
+          color,
+          weight: 2,
+          dashArray: "5,5",
+          renderer: pathRenderer,
+        }).addTo(map),
         dronePopup: createPopup("drone"),
         pilotPopup: createPopup("pilot"),
       };
@@ -403,7 +537,7 @@ function setPath(id: string, points: PathPoint[]) {
   else pendingPaths.set(id, points);
 }
 
-defineExpose({ focus, setPath });
+defineExpose({ focus, setPath, panTo, fitSensors });
 
 onMounted(() => {
   map = L.map(el.value!, {
@@ -412,6 +546,14 @@ onMounted(() => {
     zoomControl: false,
   }).setView([54.69, 25.28], 7);
   L.control.zoom({ position: "bottomright" }).addTo(map);
+  map.createPane("dronePaths").style.zIndex = "420"; // above sensor circles (overlay pane)
+  map.createPane("drones").style.zIndex = "610"; // above sensor markers (marker pane)
+  pathRenderer = L.svg({ pane: "dronePaths", padding: 2 });
+  showDronePanes(props.showDrones);
+  map.createPane("sensorAreas").style.zIndex = "410"; // coverage circles + overlap, under drone paths
+  map.createPane("sensors").style.zIndex = "605"; // sensor markers, under drone markers
+  sensorRenderer = L.svg({ pane: "sensorAreas", padding: 2 });
+  showSensorPanes(props.planning);
   const osm = (className?: string) =>
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
@@ -429,6 +571,12 @@ onMounted(() => {
   };
   showBase(props.base);
   if (props.zones.length) renderZoneLayer(props.zones);
+  map.on("click", (e) => {
+    if (props.planning && props.placing)
+      emit("addSensor", props.placing, e.latlng.lat, e.latlng.lng);
+  });
+  syncSensors();
+  drawOverlap();
   map.on("dragstart", () => {
     if (props.following) emit("unfollow"); // manual pan cancels follow
   });
@@ -454,6 +602,10 @@ watch(() => props.detections, update);
 watch(() => props.zones, renderZoneLayer);
 watch(() => props.base, showBase);
 watch(() => props.showZones, showZoneLayer);
+watch(() => props.showDrones, showDronePanes);
+watch(() => props.planning, showSensorPanes);
+watch(() => [props.sensors, props.planning], syncSensors, { deep: true });
+watch(() => [props.sensors, props.planning, props.overlap], drawOverlap, { deep: true });
 
 // Leaflet content is plain DOM: relabel it when the language changes
 watch(lang, () => {
@@ -473,7 +625,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="el" class="map" />
+  <div
+    ref="el"
+    class="map"
+    :class="{ placing: planning && placing }"
+    @dragover="onDragOver"
+    @drop="onDrop"
+  />
 </template>
 
 <style scoped>
@@ -496,6 +654,25 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   color: #fff;
   box-shadow: 0 2px 6px rgba(15, 30, 60, 0.35);
+}
+:deep(.sensor-marker) {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border: 2px solid #fff;
+  border-radius: 8px; /* square: tells sensors apart from round drone markers */
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(15, 30, 60, 0.35);
+}
+:deep(.sensor-marker svg) {
+  width: 64%;
+  height: 64%;
+}
+.map.placing,
+.map.placing :deep(.leaflet-interactive) {
+  cursor: crosshair;
 }
 :deep(.rid-marker svg) {
   width: 62%;

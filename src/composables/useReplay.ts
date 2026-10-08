@@ -7,26 +7,12 @@ import {
 } from "../replay/parse";
 import { checkPosition, isZoneActive, type Zone } from "../zones";
 import { MAX_ALT_M } from "../config";
-import { validPos } from "../geo";
+import { validPos, distanceM } from "../geo";
 import { locale } from "../i18n";
 
 const TICK_MS = 250;
 export const REPLAY_PREFIX = "R-"; // replayed IDs are prefixed so they never collide with live ones
 
-const R = 6_371_000; // earth radius, m
-const rad = (d: number) => (d * Math.PI) / 180;
-
-function distanceM(
-  a: { lat: number; lng: number },
-  b: { lat: number; lng: number },
-): number {
-  const dLat = rad(b.lat - a.lat);
-  const dLng = rad(b.lng - a.lng);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
 
 // Last point index with t <= time
 function indexAt(pts: ReplayPoint[], time: number): number {

@@ -39,10 +39,10 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
-/* Top-left; the zoom buttons moved to the bottom right, so this corner is free */
+/* Top-left, below the Monitor / Planner switch */
 .stack {
   position: absolute;
-  top: 10px;
+  top: 64px;
   left: 10px;
   z-index: 1000;
   display: flex;

@@ -1,5 +1,7 @@
 import type { TrackPoint } from "./composables/useTrackHistory";
 import type { Alert } from "./composables/useToasts";
+import { rangeOf, type Plan } from "./composables/useSensors";
+import { planJson } from "./plans";
 import { t } from "./i18n";
 
 export type ExportFormat = "gpx" | "kml" | "csv";
@@ -115,6 +117,26 @@ export function exportAlerts(alerts: Alert[]): void {
   download(
     `alerts_${fileTime(Date.now() / 1000)}.csv`,
     ["time,kind,drone_id,message", ...rows].join("\n") + "\n",
+    MIME.csv,
+  );
+}
+
+const planFile = (plan: Plan, ext: string) =>
+  `${(plan.name || "sensor-plan").replace(/[^\p{L}\p{N}_-]+/gu, "_")}_${fileTime(Date.now() / 1000)}.${ext}`;
+
+// Plan file, re-importable in the planner
+export function downloadPlan(plan: Plan): void {
+  download(planFile(plan, "json"), planJson(plan) + "\n", "application/json");
+}
+
+// Planned sensors as a deployment list
+export function exportSensors(plan: Plan): void {
+  const rows = plan.sensors.map((s) =>
+    [s.id, s.type, s.lat.toFixed(6), s.lng.toFixed(6), rangeOf(s)].join(","),
+  );
+  download(
+    planFile(plan, "csv"),
+    ["id,type,lat,lng,range_m", ...rows].join("\n") + "\n",
     MIME.csv,
   );
 }

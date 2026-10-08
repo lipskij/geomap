@@ -3,7 +3,7 @@ import { getMockDetections } from './mock/detections'
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
 // Backend origin, e.g. https://api.example.com; empty = same origin as the app
-const API_URL = import.meta.env.VITE_API_URL ?? ''
+export const API_URL = import.meta.env.VITE_API_URL ?? ''
 
 // One decoded Remote ID frame as the receiver sends it (ESP32 id_open JSON)
 interface RawDetection {

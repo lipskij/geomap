@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from "vue";
+import { computed, nextTick, ref, shallowRef, watch } from "vue";
 import MapView, { type BaseLayer } from "./components/MapView.vue";
 import LayersPanel from "./components/LayersPanel.vue";
+import PlannerPanel from "./components/PlannerPanel.vue";
+import { useSensors, type SensorType } from "./composables/useSensors";
 import DroneList from "./components/DroneList.vue";
 import ToastStack from "./components/ToastStack.vue";
 import ReplayPanel from "./components/ReplayPanel.vue";
@@ -84,6 +86,15 @@ const replayStats = computed(() =>
 const mapView = ref<InstanceType<typeof MapView>>();
 const base = ref<BaseLayer>("light");
 const showZones = ref(false);
+
+// Monitor: live drones. Planner: place sensors on the map (the right panel switches)
+const mode = ref<"monitor" | "planner">("monitor");
+const placing = ref<SensorType | null>(null); // planner tool picked for click-to-place
+const overlap = ref<SensorType | "all" | null>("all"); // planner overlap shading, null = off
+const liveInPlanner = ref(false); // planner switch: also show live drones and monitoring
+const showDrones = computed(() => mode.value === "monitor" || liveInPlanner.value);
+const plan = useSensors();
+watch(mode, () => (placing.value = null));
 // Panels follow the base map: dark colours on the dark map, light ones otherwise
 watch(
   base,
@@ -205,7 +216,47 @@ function onExport(id: string, format: ExportFormat) {
     :right-inset="340"
     :base="base"
     :show-zones="showZones"
+    :sensors="plan.sensors.value"
+    :planning="mode === 'planner'"
+    :placing="placing"
+    :overlap="overlap"
+    :show-drones="showDrones"
     @unfollow="following = null"
+    @add-sensor="plan.add"
+    @move-sensor="plan.move"
+  />
+  <div class="mode" role="tablist">
+    <button
+      v-for="m in ['monitor', 'planner'] as const"
+      :key="m"
+      role="tab"
+      :aria-selected="mode === m"
+      @click="mode = m"
+    >
+      {{ t(`mode.${m}`) }}
+    </button>
+  </div>
+  <PlannerPanel
+    v-if="mode === 'planner'"
+    :name="plan.name.value"
+    :sensors="plan.sensors.value"
+    :placing="placing"
+    :overlap="overlap"
+    :save-error="plan.saveError.value"
+    :show-live="liveInPlanner"
+    @pick="(type) => (placing = type)"
+    @select="(s) => mapView?.panTo(s.lat, s.lng)"
+    @remove="plan.remove"
+    @clear="plan.clear"
+    @rename="(n) => (plan.name.value = n)"
+    @overlap="(v) => (overlap = v)"
+    @show-live="(v) => (liveInPlanner = v)"
+    @import="
+      (p) => {
+        plan.replace(p);
+        nextTick(() => mapView?.fitSensors());
+      }
+    "
   />
   <LayersPanel
     v-model:base="base"
@@ -213,6 +264,7 @@ function onExport(id: string, format: ExportFormat) {
     :zones-available="ZONES_ENABLED"
   />
   <DroneList
+    v-if="mode === 'monitor'"
     :drones="activeDrones"
     :selected="selected"
     :following="following"
@@ -224,8 +276,14 @@ function onExport(id: string, format: ExportFormat) {
     @follow="setFollow"
     @export="onExport"
   />
-  <ToastStack :toasts="toasts" @select="focusDrone" @dismiss="dismiss" />
+  <ToastStack
+    v-if="showDrones"
+    :toasts="toasts"
+    @select="focusDrone"
+    @dismiss="dismiss"
+  />
   <ReplayPanel
+    v-show="showDrones"
     :file-name="replay.fileName.value"
     :drone-count="replay.tracks.value.length"
     :playing="replay.playing.value"
@@ -321,6 +379,32 @@ body,
   color: var(--danger);
   font-weight: 600;
   box-shadow: var(--shadow);
+}
+
+/* Monitor / Planner switch, top-left; notifications stack below it */
+.mode {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 1000;
+  display: flex;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.mode button {
+  padding: 7px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  font: 600 14px var(--font);
+  color: var(--muted);
+  cursor: pointer;
+}
+.mode button[aria-selected="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 /* Base maps: OSM tiles recoloured, so no tile key is needed */
