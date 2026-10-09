@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { snapshots, type Snapshot } from "../live";
 import type { Detection } from "../types";
 import { exportAlerts, type ExportFormat } from "../export";
 import type { Alert } from "../composables/useToasts";
 import FlightStats from "./FlightStats.vue";
+import SnapshotViewer from "./SnapshotViewer.vue";
 import Icon from "./Icon.vue";
 import type { ZoneCheck } from "../zones";
 import { colorFor } from "../colors";
@@ -58,10 +60,24 @@ const expandedStats = computed(() =>
   props.drones && expanded.value ? props.statsFor(expanded.value) : null,
 );
 
+// Newest camera image per sensor of the expanded drone (live feed only).
+// ponytail: loaded when the row expands, not refreshed while it stays open
+const snaps = ref<Record<string, Snapshot>>({});
+const viewing = ref<Snapshot | null>(null); // image shown large
+
 function onRow(id: string) {
   emit("select", id);
   expanded.value = expanded.value === id ? null : id;
+  snaps.value = {};
+  const trackId = props.drones.find((d) => d.basic_id === id)?.track_id;
+  if (expanded.value !== id || !trackId) return;
+  snapshots(trackId)
+    .then((s) => {
+      if (expanded.value === id) snaps.value = s;
+    })
+    .catch(() => {}); // sensors still listed, just without images
 }
+
 
 const sorted = computed(() =>
   [...props.drones].sort((a, b) => a.basic_id.localeCompare(b.basic_id)),
@@ -98,7 +114,7 @@ function doExport(id: string, f: ExportFormat) {
         <div class="line">
           <button class="row" @click="emit('openDetection')">
             <span class="disc" :style="{ background: 'var(--danger)' }">
-              <Icon name="mic" />
+              <Icon name="drone" />
             </span>
             <span class="main">
               <span class="id">{{ t("acoustic.target") }}</span>
@@ -181,6 +197,27 @@ function doExport(id: string, f: ExportFormat) {
             {{ f.toUpperCase() }}
           </button>
         </div>
+        <div v-if="expanded === d.basic_id && d.sensors?.length" class="sensors">
+          <span class="label">
+            {{ t("list.sensors") }}
+            <span v-if="d.visual" :title="t('list.cameraSaw')"><Icon name="videocam" /></span>
+            <span v-if="d.audio" :title="t('list.micHeard')"><Icon name="mic" /></span>
+          </span>
+          <component
+            :is="snaps[s.node] ? 'button' : 'span'"
+            v-for="s in d.sensors"
+            :key="s.node"
+            class="sensor"
+            :title="snaps[s.node] ? t('list.showSnapshot') : undefined"
+            @click="snaps[s.node] && (viewing = snaps[s.node])"
+          >
+            <img v-if="snaps[s.node]" class="thumb" :src="snaps[s.node].url" alt="" />
+            <span>
+              <b>{{ s.node }}</b>
+              <template v-if="s.rssi != null"> · {{ s.rssi.toFixed(0) }} dBm</template>
+            </span>
+          </component>
+        </div>
         <div v-if="expandedStats && expanded === d.basic_id" class="stat">
           <FlightStats
             :s="expandedStats"
@@ -230,6 +267,7 @@ function doExport(id: string, f: ExportFormat) {
         <span class="age">{{ fmtClock(a.time) }}</span>
       </button>
     </div>
+    <SnapshotViewer :snapshot="viewing" @close="viewing = null" />
   </section>
 </template>
 
@@ -395,6 +433,42 @@ function doExport(id: string, f: ExportFormat) {
 .fmt:hover {
   background: var(--accent-soft);
   color: var(--accent);
+}
+.sensors {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 6px;
+}
+.sensors .label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.sensor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+span.sensor {
+  padding-left: 8px;
+}
+button.sensor:hover {
+  background: var(--hover);
+}
+.thumb {
+  width: 40px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: 5px;
 }
 .stat {
   margin: 0 0 8px;

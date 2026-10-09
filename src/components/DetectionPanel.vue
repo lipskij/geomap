@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, reactive, ref, watch } from "vue";
+import SnapshotViewer from "./SnapshotViewer.vue";
+import { newest, snapshots, type Snapshot } from "../live";
 import Icon from "./Icon.vue";
 import { assess, READY, type AcousticTrack, type Bearing } from "../acoustic";
 import { SENSOR_TYPES, type Sensor } from "../composables/useSensors";
@@ -17,8 +19,51 @@ const emit = defineEmits<{ select: [s: Sensor] }>();
 // Recomputed every poll: track and hearing are replaced each tick
 const ready = computed(() => (props.track ? assess(props.track, Date.now()) : null));
 const last = computed(() => props.track?.fixes[props.track.fixes.length - 1]);
-const audio = computed(() => props.sensors.filter((s) => s.type === "audio"));
+const audio = computed(() => props.sensors); // mock mics, or the live feed's cameras
 const bearingOf = (s: Sensor) => props.hearing.find((b) => b.sensorId === s.id);
+
+// Newest camera image of each contact a sensor reports (live feed), checked again every
+// SNAP_REFRESH_MS while it's being heard
+const SNAP_REFRESH_MS = 15_000;
+const snaps = reactive<Record<string, Snapshot | null>>({}); // contact track id -> image
+const fetchedAt = new Map<string, number>();
+// Contact whose image is open large; re-checked every VIEW_REFRESH_MS so a newer image
+// from the camera replaces it
+const VIEW_REFRESH_MS = 3000;
+const viewingTrack = ref<string | null>(null);
+const viewing = computed(() => (viewingTrack.value ? snaps[viewingTrack.value] ?? null : null));
+watch(viewingTrack, (id, _, onCleanup) => {
+  if (!id) return;
+  const timer = setInterval(
+    () =>
+      snapshots(id)
+        .then((s) => {
+          const n = newest(s);
+          if (n) snaps[id] = n;
+        })
+        .catch(() => {}), // keep showing the last image
+    VIEW_REFRESH_MS,
+  );
+  onCleanup(() => clearInterval(timer));
+});
+watch(
+  () => props.hearing,
+  (list) => {
+    for (const b of list) {
+      const id = b.trackId;
+      if (!id || Date.now() - (fetchedAt.get(id) ?? 0) < SNAP_REFRESH_MS) continue;
+      fetchedAt.set(id, Date.now());
+      snapshots(id)
+        .then((s) => (snaps[id] = newest(s)))
+        .catch(() => {}); // listed without an image
+    }
+  },
+  { immediate: true },
+);
+const snapOf = (s: Sensor) => {
+  const id = bearingOf(s)?.trackId;
+  return id ? snaps[id] ?? null : null;
+};
 
 const checks = computed(() => {
   const r = ready.value, f = last.value, h = props.track?.heading;
@@ -36,7 +81,7 @@ const checks = computed(() => {
 <template>
   <section class="side-panel">
     <header class="head">
-      <span class="panel-title"><Icon name="mic" />{{ t("det.title") }}</span>
+      <span class="panel-title"><Icon name="sensors" />{{ t("det.title") }}</span>
     </header>
 
     <div
@@ -75,10 +120,18 @@ const checks = computed(() => {
         :class="{ on: bearingOf(s), selected: s.id === selected }"
         @click="emit('select', s)"
       >
-        <span class="sq" :style="{ background: bearingOf(s) ? SENSOR_TYPES.audio.color : 'var(--faint)' }">
-          <Icon name="mic" />
+        <span class="sq" :style="{ background: bearingOf(s) ? SENSOR_TYPES[s.type].color : 'var(--faint)' }">
+          <Icon :name="SENSOR_TYPES[s.type].icon" />
         </span>
-        <span class="name">{{ s.name ?? `${t("plan.audio")} #${s.id}` }}</span>
+        <span class="name">{{ s.name ?? `${t(`plan.${s.type}`)} #${s.id}` }}</span>
+        <button
+          v-if="snapOf(s)"
+          class="snap"
+          :title="t('list.showSnapshot')"
+          @click.stop="viewingTrack = bearingOf(s)?.trackId ?? null"
+        >
+          <img :src="snapOf(s)!.url" alt="" />
+        </button>
         <span class="state">
           <template v-if="s.offline">{{ t("det.offline") }}</template>
           <template v-else-if="bearingOf(s) && bearingOf(s)!.sigmaDeg >= 90">{{ t("det.noBearing") }}</template>
@@ -87,6 +140,7 @@ const checks = computed(() => {
         </span>
       </li>
     </ul>
+    <SnapshotViewer :snapshot="viewing" @close="viewingTrack = null" />
   </section>
 </template>
 
@@ -198,6 +252,16 @@ code {
   place-items: center;
   color: #fff;
   font-size: 16px;
+}
+.snap {
+  padding: 0;
+  line-height: 0;
+}
+.snap img {
+  width: 40px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: 5px;
 }
 .name {
   flex: 1;

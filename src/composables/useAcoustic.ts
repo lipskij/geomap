@@ -24,9 +24,7 @@ export function useAcoustic(sensors: Ref<Sensor[]>, onNewTarget: (sensors: numbe
       // ponytail: no feed yet; surface errors like detections do once there is one
     }
     const now = Date.now();
-    const audio = new Map(
-      sensors.value.filter((s) => s.type === "audio").map((s) => [s.id, s]),
-    );
+    const audio = new Map(sensors.value.map((s) => [s.id, s])); // bearing sensors only
     // One sensor alone shows nothing: only crossings of 2+ bearings make a fix
     const recent = [...latest.values()].filter(
       (b) => audio.has(b.sensorId) && now - b.t <= WINDOW_MS,

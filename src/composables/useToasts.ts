@@ -21,7 +21,7 @@ export interface Alert extends Toast {
 const MAX_TOASTS = 5;
 const MAX_ALERTS = 500;
 const ALERTS_KEY = "geomap.alerts";
-const SEEN_KEY = "geomap.seenDrones"; // id -> last seen, ms; survives reloads
+const SEEN_KEY = "geomap.seenDrones"; // track (or drone) id -> last seen, ms; survives reloads
 
 function loadAlerts(): Alert[] {
   try {
@@ -75,13 +75,14 @@ export function useToasts(drones: Ref<Detection[]>) {
     setTimeout(() => dismiss(key), TOAST_MS);
   }
 
-  // A drone ID is new unless it was seen in the last NEW_AGAIN_SECONDS, reloads included
+  // Announced once per flight, reloads included: the live feed starts a new track_id when
+  // a drone comes back after its track closed; mock drones have none, so their ID counts
   watch(drones, (list) => {
     const now = Date.now();
     for (const d of list) {
-      if (!(now - (seen[d.basic_id] ?? 0) <= NEW_AGAIN_SECONDS * 1000))
-        push(d.basic_id, "msg.newDrone");
-      seen[d.basic_id] = now;
+      const key = d.track_id ?? d.basic_id;
+      if (!(now - (seen[key] ?? 0) <= NEW_AGAIN_SECONDS * 1000)) push(d.basic_id, "msg.newDrone");
+      seen[key] = now;
     }
     for (const id in seen) if (now - seen[id] > NEW_AGAIN_SECONDS * 1000) delete seen[id];
     try {

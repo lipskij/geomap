@@ -18,6 +18,7 @@ interface LiveNode {
   lat: number;
   lon: number;
   online: boolean;
+  fake?: boolean; // position from FAKE_NODE_POS
 }
 
 interface LiveTrack {
@@ -39,6 +40,8 @@ interface LiveTrack {
     classes?: string[];
   };
   nodes?: Record<string, { rssi: number | null }>;
+  visual_confirmed?: boolean;
+  audio_confirmed?: boolean;
 }
 
 export type LiveStatus =
@@ -50,7 +53,7 @@ export type LiveStatus =
   | "refused" // never got in: wrong key or server down (the browser can't tell which)
   | "badKey";
 export const liveStatus = shallowRef<LiveStatus>("off");
-export const liveNodes = shallowRef<Sensor[]>([]); // backend nodes as acoustic sensors
+export const liveNodes = shallowRef<Sensor[]>([]); // backend nodes as bearing sensors
 
 const tracks = new Map<string, LiveTrack>();
 const nodes = new Map<string, LiveNode>();
@@ -67,10 +70,30 @@ const sensorId = (nodeId: string) => {
   return nodeIds.get(nodeId)!;
 };
 
+// Positions for nodes that detect but never send a status (cameras don't report one yet).
+// ponytail: hand-placed test values; remove once the nodes send status with lat/lon
+const FAKE_NODE_POS: Record<string, { lat: number; lon: number }> = {
+  "vln-01": { lat: 54.6862, lon: 25.278 },
+};
+
+let nodesKey = "";
 function publishNodes() {
-  liveNodes.value = [...nodes.values()].map((n) => ({
+  const list: LiveNode[] = [...nodes.values()];
+  const used = new Set<string>(); // nodes the tracks mention
+  for (const t of tracks.values()) {
+    if (t.latest?.node_id) used.add(t.latest.node_id);
+    for (const id in t.nodes ?? {}) used.add(id);
+  }
+  for (const id of used)
+    if (!nodes.has(id) && FAKE_NODE_POS[id])
+      list.push({ node_id: id, ...FAKE_NODE_POS[id], online: true, fake: true });
+  // Track messages call this every time: only republish when the nodes changed
+  const key = JSON.stringify(list);
+  if (key === nodesKey) return;
+  nodesKey = key;
+  liveNodes.value = list.map((n) => ({
     id: sensorId(n.node_id),
-    type: "audio" as const,
+    type: "video" as const, // scanner nodes report camera bearings (no mic arrays yet)
     lat: n.lat,
     lng: n.lon,
     name: n.node_id,
@@ -91,6 +114,7 @@ function handle(m: { type: string; data?: any; tracks?: LiveTrack[]; nodes?: Liv
     case "track.updated":
     case "track.lost": // merged: in case a lost message carries only the changed fields
       tracks.set(m.data.track_id, { ...tracks.get(m.data.track_id), ...m.data });
+      publishNodes(); // a node with a fake position may have just appeared
       break;
     case "track.closed":
       tracks.delete(m.data.track_id);
@@ -142,6 +166,7 @@ export function setLive(on: boolean) {
   old?.close();
   tracks.clear();
   nodes.clear();
+  nodesKey = "";
   publishNodes();
   if (on) connect();
   else liveStatus.value = "off";
@@ -162,6 +187,7 @@ export function liveDetections(): Detections {
     const id = t.uas_id ?? t.track_id;
     out[id] = {
       basic_id: id,
+      track_id: t.track_id,
       rssi: rssi.length ? Math.max(...rssi) : null,
       drone_lat: l.lat,
       drone_long: l.lon,
@@ -170,6 +196,9 @@ export function liveDetections(): Detections {
       pilot_lat: l.operator_lat ?? 0, // 0,0 = no pilot position (see validPos)
       pilot_long: l.operator_lon ?? 0,
       last_update: seconds(t.last_seen),
+      sensors: Object.entries(t.nodes ?? {}).map(([node, n]) => ({ node, rssi: n.rssi })),
+      visual: t.visual_confirmed,
+      audio: t.audio_confirmed,
     };
   }
   return out;
@@ -185,10 +214,38 @@ export function liveBearings(): Bearing[] {
     const known = l.bearing_deg != null;
     out.push({
       sensorId: sensorId(l.node_id),
+      trackId: t.track_id,
       deg: known ? l.bearing_deg! : 0,
       sigmaDeg: known ? (l.bearing_uncertainty_deg ?? 10) : 180,
-      t: Date.parse(t.last_seen),
+      // The backend keeps a contact active until 15 s without events; cameras report
+      // every few seconds, so its own last_seen would drop out of the 2 s crossing window
+      t: Date.now(),
     });
   }
   return out;
 }
+
+export interface Snapshot {
+  url: string;
+  node: string;
+  ts: string; // ISO time
+}
+
+// Newest camera snapshot per node for a track, through the dev server's /oracle proxy
+// (see vite.config.ts). ponytail: dev only until the backend allows CORS and fixes media
+// ?token=; it also looks only at the track's latest 200 events
+export async function snapshots(trackId: string): Promise<Record<string, Snapshot>> {
+  if (!import.meta.env.DEV) return {};
+  const res = await fetch(`/oracle/v1/tracks/${encodeURIComponent(trackId)}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const track: { events?: { event_id: string; type: string; node_id: string; ts: string; media_path: string | null }[] } =
+    await res.json();
+  const out: Record<string, Snapshot> = {};
+  for (const e of track.events ?? []) // newest first: keep the first per node
+    if (e.type === "visual" && e.media_path && !out[e.node_id])
+      out[e.node_id] = { url: `/oracle/v1/media/${encodeURIComponent(e.event_id)}`, node: e.node_id, ts: e.ts };
+  return out;
+}
+
+export const newest = (snaps: Record<string, Snapshot>) =>
+  Object.values(snaps).sort((a, b) => b.ts.localeCompare(a.ts))[0] ?? null;

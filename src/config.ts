@@ -2,7 +2,7 @@ export const POLL_MS = 1000;
 export const FADE_SECONDS = 10; // grey out drones without updates
 export const STALE_SECONDS = 60; // remove drones without updates
 export const TOAST_MS = 6000; // new-drone message lifetime
-export const NEW_AGAIN_SECONDS = 600; // a drone gone this long counts as new when it returns
+export const NEW_AGAIN_SECONDS = 600; // a flight (or mock drone) unseen this long is announced again
 export const GAP_SECONDS = 5; // longer without data: path drawn dashed (signal gap)
 export const JUMP_M = 5000; // farther between two fixes: not one flight (test data, bad fix), path not joined
 

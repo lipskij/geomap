@@ -4,6 +4,7 @@
 
 export interface Bearing {
   sensorId: number;
+  trackId?: string; // live feed: the contact track it came from (camera images)
   deg: number; // 0 = north, clockwise
   sigmaDeg: number; // ± measurement error
   t: number; // ms

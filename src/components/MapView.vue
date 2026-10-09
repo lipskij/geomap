@@ -14,6 +14,7 @@ import { elevation, loadTerrain } from "../terrain";
 import { lang, t, type MsgKey } from "../i18n";
 import { ICONS, type IconName } from "../icons";
 import { offset, type AcousticTrack } from "../acoustic";
+import { newest, snapshots } from "../live";
 
 export type BaseLayer = "light" | "dark" | "map" | "satellite";
 
@@ -45,6 +46,7 @@ const emit = defineEmits<{
 interface PopupView {
   el: HTMLElement;
   set: (d: Detection, check?: ZoneCheck) => void;
+  open?: (popup: L.Popup) => void; // popup shown: load extras (camera snapshot)
 }
 
 interface Track {
@@ -201,10 +203,10 @@ function drawAcoustic(a: AcousticTrack | null) {
     for (let i = -4; i <= 4; i++) pts.push(offset(p, m, deg + (sigma * i) / 4));
     return pts;
   };
-  const audio = SENSOR_TYPES.audio.color;
   for (const b of a.bearings) {
     const s = props.acousticSensors.find((x) => x.id === b.sensorId);
     if (!s) continue;
+    const audio = SENSOR_TYPES[s.type].color; // mic purple, camera teal
     L.polygon(fan(s, rangeOf(s), b.deg, b.sigmaDeg), { ...opts, color: audio, weight: 1, fillOpacity: 0.18 }).addTo(acousticLayer);
     L.circleMarker([s.lat, s.lng], { ...opts, radius: 4, color: audio, fillOpacity: 1 }).addTo(acousticLayer);
   }
@@ -280,10 +282,10 @@ function createPopup(kind: "drone" | "pilot"): PopupView {
   el.innerHTML = `
     <b data-l="popup.${kind}"></b>
     <div class="line">ID: <code data-f="id"></code><button class=copyBtn data-copy="id" data-lt="copy.id"><svg viewBox="0 0 24 24" fill="currentColor">${ICONS.copy}</svg></button></div>
-    <div>RSSI: <span data-f="rssi"></span> dBm</div>
+    <div>RSSI: <span data-f="rssi"></span></div>
     ${kind === "drone" ? '<div><span data-l="popup.alt"></span>: <span data-f="alt"></span> m</div><div><span data-l="popup.speed"></span>: <span data-f="speed"></span></div>' : ""}
     <div class="line"><code data-f="pos"></code><button class=copyBtn data-copy="pos" data-lt="copy.coords"><svg viewBox="0 0 24 24" fill="currentColor">${ICONS.copy}</svg></button></div>
-    ${kind === "drone" ? '<div class="zones" data-f="zones"></div>' : ""}`;
+    ${kind === "drone" ? '<div class="zones" data-f="zones"></div><figure class="snap" data-f="snap" hidden><img alt=""><figcaption></figcaption></figure>' : ""}`;
   applyLabels(el);
 
   const field = (name: string) =>
@@ -298,13 +300,39 @@ function createPopup(kind: "drone" | "pilot"): PopupView {
     });
   });
 
+  let trackId: string | undefined;
+
+  // Newest camera snapshot of the live track (Remote ID drones from the backend only).
+  // ponytail: loaded when the popup opens, not refreshed while it stays open
+  function open(popup: L.Popup) {
+    const fig = field("snap")!;
+    fig.hidden = true;
+    const id = trackId;
+    if (!id) return;
+    snapshots(id)
+      .then(newest)
+      .then((s) => {
+        if (!s || id !== trackId) return;
+        const img = fig.querySelector("img")!;
+        img.onload = () => popup.update(); // grow the popup to fit the image
+        img.src = s.url;
+        fig.querySelector("figcaption")!.textContent = t("popup.snapshot", {
+          node: s.node,
+          time: new Date(s.ts).toLocaleTimeString(),
+        });
+        fig.hidden = false;
+      })
+      .catch(() => {}); // no snapshot shown; the rest of the popup still works
+  }
+
   function set(d: Detection, check?: ZoneCheck) {
+    trackId = d.track_id;
     const [lat, lng] =
       kind === "drone"
         ? [d.drone_lat, d.drone_long]
         : [d.pilot_lat, d.pilot_long];
     field("id")!.textContent = d.basic_id;
-    field("rssi")!.textContent = d.rssi == null ? "–" : String(d.rssi);
+    field("rssi")!.textContent = d.rssi == null ? "–" : `${d.rssi} dBm`;
     field("pos")!.textContent = fmtPos(lat, lng);
     if (kind === "drone") {
       field("alt")!.textContent = String(d.drone_altitude);
@@ -314,7 +342,7 @@ function createPopup(kind: "drone" | "pilot"): PopupView {
     }
   }
 
-  return { el, set };
+  return { el, set, open: kind === "drone" ? open : undefined };
 }
 
 // Zone status block in the drone popup
@@ -408,6 +436,7 @@ function upsertMarker(
   }
   return L.marker(pos, { icon, pane: "drones" })
     .bindPopup(popup.el, { autoPanPaddingBottomRight: [inset() + 10, 10] })
+    .on("popupopen", (e) => popup.open?.(e.popup))
     .addTo(map!);
 }
 
@@ -757,6 +786,20 @@ onBeforeUnmount(() => {
 :deep(.rid-popup) {
   font-size: 13px;
   line-height: 1.6;
+}
+:deep(.rid-popup .snap) {
+  margin: 8px 0 0;
+}
+:deep(.rid-popup .snap img) {
+  display: block;
+  width: 240px;
+  max-width: 100%;
+  border-radius: 6px;
+}
+:deep(.rid-popup .snap figcaption) {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted);
 }
 :deep(.rid-popup b) {
   font-family: var(--font-head);
