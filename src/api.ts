@@ -19,7 +19,7 @@ function loadSource(): DataSource {
   } catch {
     // storage blocked: fall back to the build default
   }
-  return import.meta.env.VITE_USE_MOCK === 'false' ? 'live' : 'mock'
+  return 'mock'
 }
 export const source = ref<DataSource>(loadSource())
 watch(
