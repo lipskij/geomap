@@ -91,6 +91,7 @@ const replayStats = computed(() =>
 const mapView = ref<InstanceType<typeof MapView>>();
 const base = ref<BaseLayer>("light");
 const showZones = ref(false);
+const showSensorLayer = ref(false); // monitor: detecting sensors on the map (planner/detection always show theirs)
 
 // Monitor: live drones. Planner: place sensors on the map (the right panel switches)
 const mode = ref<"monitor" | "planner" | "detection">("monitor");
@@ -254,9 +255,9 @@ function onExport(id: string, format: ExportFormat) {
     :right-inset="340"
     :base="base"
     :show-zones="showZones"
-    :sensors="mode === 'detection' ? acousticSensors : plan.sensors.value"
+    :sensors="mode === 'planner' ? plan.sensors.value : acousticSensors"
     :planning="mode === 'planner'"
-    :show-sensors="mode !== 'monitor'"
+    :show-sensors="mode !== 'monitor' || showSensorLayer"
     :selected-sensor="selectedSensor"
     :placing="placing"
     :overlap="overlap"
@@ -327,6 +328,7 @@ function onExport(id: string, format: ExportFormat) {
   <LayersPanel
     v-model:base="base"
     v-model:show-zones="showZones"
+    v-model:show-sensors="showSensorLayer"
     :zones-available="ZONES_ENABLED"
   />
   <DroneList

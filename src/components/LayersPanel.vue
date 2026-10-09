@@ -4,10 +4,11 @@ import Icon from "./Icon.vue";
 import type { BaseLayer } from "./MapView.vue";
 import { LANGS, lang, t, type MsgKey } from "../i18n";
 
-defineProps<{ base: BaseLayer; showZones: boolean; zonesAvailable: boolean }>();
+defineProps<{ base: BaseLayer; showZones: boolean; zonesAvailable: boolean; showSensors: boolean }>();
 const emit = defineEmits<{
   "update:base": [value: BaseLayer];
   "update:showZones": [value: boolean];
+  "update:showSensors": [value: boolean];
 }>();
 
 const open = ref(false);
@@ -74,6 +75,17 @@ const desc = (key: BaseLayer) => `layer.${key}.desc` as MsgKey;
           <span class="desc">{{
             t(zonesAvailable ? "layer.zones.desc" : "layer.zones.off")
           }}</span>
+        </span>
+      </label>
+      <label class="check">
+        <input
+          type="checkbox"
+          :checked="showSensors"
+          @change="emit('update:showSensors', ($event.target as HTMLInputElement).checked)"
+        />
+        <span>
+          <span class="name">{{ t("layer.sensors") }}</span>
+          <span class="desc">{{ t("layer.sensors.desc") }}</span>
         </span>
       </label>
     </div>
