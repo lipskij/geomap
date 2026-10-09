@@ -1,6 +1,6 @@
 import type { TrackPoint } from "./composables/useTrackHistory";
 import type { Alert } from "./composables/useToasts";
-import { mastOf, rangeOf, type Plan } from "./composables/useSensors";
+import { mastOf, noiseOf, rangeOf, type Plan } from "./composables/useSensors";
 import { planJson } from "./plans";
 import { t } from "./i18n";
 
@@ -132,11 +132,11 @@ export function downloadPlan(plan: Plan): void {
 // Planned sensors as a deployment list
 export function exportSensors(plan: Plan): void {
   const rows = plan.sensors.map((s) =>
-    [s.id, s.type, s.lat.toFixed(6), s.lng.toFixed(6), rangeOf(s), mastOf(s)].join(","),
+    [s.id, s.type, s.lat.toFixed(6), s.lng.toFixed(6), rangeOf(s), mastOf(s), s.type === "audio" ? noiseOf(s) : ""].join(","),
   );
   download(
     planFile(plan, "csv"),
-    ["id,type,lat,lng,range_m,mast_m", ...rows].join("\n") + "\n",
+    ["id,type,lat,lng,range_m,mast_m,noise", ...rows].join("\n") + "\n",
     MIME.csv,
   );
 }

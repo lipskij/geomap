@@ -1,5 +1,5 @@
 import { API_URL } from "./api";
-import { SENSOR_TYPES, type Plan, type Sensor } from "./composables/useSensors";
+import { ACOUSTIC_RANGE, SENSOR_TYPES, type Noise, type Plan, type Sensor } from "./composables/useSensors";
 import { validPos } from "./geo";
 
 // Plan storage. Browser storage (like the alert log) until the backend has
@@ -50,7 +50,7 @@ export function planJson(plan: Plan): string {
     {
       version: 1,
       name: plan.name,
-      sensors: plan.sensors.map(({ id, type, lat, lng, mastM }) => ({ id, type, lat, lng, mastM })),
+      sensors: plan.sensors.map(({ id, type, lat, lng, mastM, noise }) => ({ id, type, lat, lng, mastM, noise })),
     },
     null,
     2,
@@ -60,7 +60,7 @@ export function planJson(plan: Plan): string {
 // Validates untrusted input (imported files, server responses); skips unknown sensor
 // types and bad positions; a missing or invalid mount height falls back to the default
 function toSensors(
-  rows: { type?: unknown; lat?: unknown; lng?: unknown; mastM?: unknown }[],
+  rows: { type?: unknown; lat?: unknown; lng?: unknown; mastM?: unknown; noise?: unknown }[],
 ): Sensor[] {
   const sensors: Sensor[] = [];
   for (const s of rows) {
@@ -75,6 +75,7 @@ function toSensors(
       lat,
       lng,
       ...(mast >= 0 && mast <= MAX_MAST_M && { mastM: mast }),
+      ...(s.type === "audio" && typeof s.noise === "string" && s.noise in ACOUSTIC_RANGE && { noise: s.noise as Noise }),
     });
   }
   return sensors;
@@ -89,16 +90,16 @@ export function parsePlan(text: string): Plan {
   };
 }
 
-// The CSV deployment list (id,type,lat,lng,range_m,mast_m); columns found by header name.
+// The CSV deployment list (id,type,lat,lng,range_m,mast_m,noise); columns found by header name.
 // Radii in the file are ignored: they come from the sensor type
 export function parsePlanCsv(text: string): Plan {
   const [head, ...lines] = text.trim().split(/\r?\n/);
   const cols = head.split(",").map((c) => c.trim().toLowerCase());
-  const [ti, la, ln, ma] = ["type", "lat", "lng", "mast_m"].map((c) => cols.indexOf(c));
+  const [ti, la, ln, ma, no] = ["type", "lat", "lng", "mast_m", "noise"].map((c) => cols.indexOf(c));
   if (ti < 0 || la < 0 || ln < 0) throw new Error("CSV needs type, lat and lng columns");
   const rows = lines.map((l) => {
     const v = l.split(",").map((c) => c.trim());
-    return { type: v[ti], lat: v[la], lng: v[ln], mastM: ma < 0 ? undefined : v[ma] };
+    return { type: v[ti], lat: v[la], lng: v[ln], mastM: ma < 0 ? undefined : v[ma], noise: no < 0 ? undefined : v[no] };
   });
   return { name: "", sensors: toSensors(rows) };
 }

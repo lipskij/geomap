@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import Icon from "./Icon.vue";
 import {
   mastOf,
   rangeOf,
   SENSOR_TYPES,
+  type Noise,
   type Plan,
   type Sensor,
   type SensorType,
@@ -21,12 +22,14 @@ const props = defineProps<{
   overlap: SensorType | "all" | null;
   saveError: string | null;
   showLive: boolean;
+  selected: number | null;
 }>();
 const emit = defineEmits<{
   pick: [type: SensorType | null];
   select: [s: Sensor];
   remove: [id: number];
   mast: [id: number, m: number];
+  noise: [id: number, n: Noise | undefined];
   clear: [];
   rename: [name: string];
   overlap: [value: SensorType | "all" | null];
@@ -35,6 +38,17 @@ const emit = defineEmits<{
 }>();
 
 const types = Object.keys(SENSOR_TYPES) as SensorType[];
+// Sensor picked on the map: bring its row into view
+const panel = ref<HTMLElement>();
+watch(
+  () => props.selected,
+  (id) =>
+    nextTick(() =>
+      panel.value?.querySelector(`[data-id="${id}"]`)?.scrollIntoView({ block: "nearest" }),
+    ),
+);
+
+const NOISES: Noise[] = ["rural", "suburban", "urban"];
 const typeName = (type: SensorType) => t(`plan.${type}` as MsgKey);
 const plan = (): Plan => ({ name: props.name, sensors: props.sensors });
 
@@ -113,7 +127,7 @@ async function onImport(e: Event) {
 </script>
 
 <template>
-  <section class="side-panel">
+  <section ref="panel" class="side-panel">
     <header class="head">
       <span class="panel-title"><Icon name="sensors" />{{ t("plan.title") }}</span>
       <input
@@ -189,7 +203,14 @@ async function onImport(e: Event) {
 
     <ul class="list">
       <li v-if="!sensors.length" class="empty">{{ t("plan.empty") }}</li>
-      <li v-for="s in sensors" :key="s.id" class="item">
+      <li
+        v-for="s in sensors"
+        :key="s.id"
+        class="item"
+        :class="{ selected: s.id === selected }"
+        :data-id="s.id"
+        :aria-current="s.id === selected"
+      >
         <button class="row" @click="emit('select', s)">
           <span class="sq" :style="{ background: SENSOR_TYPES[s.type].color }">
             <Icon :name="SENSOR_TYPES[s.type].icon" />
@@ -205,6 +226,17 @@ async function onImport(e: Event) {
             </span>
           </span>
         </button>
+        <select
+          v-if="s.type === 'audio'"
+          class="noise"
+          :value="s.noise ?? ''"
+          :title="t('plan.noise')"
+          :aria-label="t('plan.noise')"
+          @change="emit('noise', s.id, (($event.target as HTMLSelectElement).value || undefined) as Noise | undefined)"
+        >
+          <option value="">{{ s.autoNoise ? t("noise.auto", { n: t(`noise.${s.autoNoise}`) }) : t("noise.autoPending") }}</option>
+          <option v-for="n in NOISES" :key="n" :value="n">{{ t(`noise.${n}`) }}</option>
+        </select>
         <label class="mast" :title="t('plan.mast')">
           <input
             type="number"
@@ -440,6 +472,10 @@ async function onImport(e: Event) {
 .item:hover {
   background: var(--hover);
 }
+.item.selected {
+  background: var(--selected);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
 .row {
   flex: 1;
   min-width: 0;
@@ -466,6 +502,15 @@ code {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--muted);
+}
+.noise {
+  flex: none;
+  padding: 3px 2px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text-strong);
+  font: 600 12px var(--font);
 }
 .mast {
   flex: none;

@@ -28,6 +28,7 @@ const props = defineProps<{
   sensors: Sensor[];
   planning: boolean; // planner mode: sensors can be dropped, placed and dragged
   showSensors: boolean; // sensor markers + coverage circles (planner, detection)
+  selectedSensor: number | null; // highlighted marker and circle
   placing: SensorType | null; // type picked in the planner; next map click places it
   overlap: SensorType | "all" | null; // shade where these sensors' ranges overlap; null = off
   showDrones: boolean; // false hides drone markers and paths (they keep updating)
@@ -38,6 +39,7 @@ const emit = defineEmits<{
   unfollow: [];
   addSensor: [type: SensorType, lat: number, lng: number];
   moveSensor: [id: number, lat: number, lng: number];
+  selectSensor: [id: number];
 }>();
 
 interface PopupView {
@@ -161,6 +163,7 @@ function syncSensors() {
         pane: "sensors",
       }).addTo(map);
       const id = s.id;
+      marker.on("click", () => emit("selectSensor", id));
       marker.on("drag", () => circle.setLatLng(marker.getLatLng()));
       marker.on("dragend", () => {
         const p = marker.getLatLng();
@@ -171,6 +174,10 @@ function syncSensors() {
     }
     l.marker.setLatLng([s.lat, s.lng]);
     l.circle.setLatLng([s.lat, s.lng]).setRadius(rangeOf(s));
+    const sel = s.id === props.selectedSensor;
+    l.marker.getElement()?.classList.toggle("selected", sel);
+    l.marker.setZIndexOffset(sel ? 1000 : 0);
+    l.circle.setStyle({ weight: sel ? 3 : 1.5, dashArray: sel ? "" : "5,5", fillOpacity: sel ? 0.16 : 0.08 });
     if (props.planning) l.marker.dragging?.enable();
     else l.marker.dragging?.disable();
   }
@@ -649,7 +656,7 @@ watch(() => props.base, showBase);
 watch(() => props.showZones, showZoneLayer);
 watch(() => props.showDrones, (on) => showPanes(DRONE_PANES, on));
 watch(() => props.showSensors, (on) => showPanes(SENSOR_PANES, on));
-watch(() => [props.sensors, props.planning], syncSensors, { deep: true });
+watch(() => [props.sensors, props.planning, props.selectedSensor], syncSensors, { deep: true });
 watch(() => props.acoustic, drawAcoustic);
 watch(() => [props.sensors, props.planning, props.overlap], drawOverlap, { deep: true });
 
@@ -711,6 +718,10 @@ onBeforeUnmount(() => {
   border-radius: 8px; /* square: tells sensors apart from round drone markers */
   color: #fff;
   box-shadow: 0 2px 6px rgba(15, 30, 60, 0.35);
+}
+:deep(.rid-icon.selected .sensor-marker) {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
 }
 :deep(.sensor-marker svg) {
   width: 64%;

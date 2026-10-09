@@ -15,6 +15,7 @@ export const MOCK_ACOUSTIC_SENSORS: Sensor[] = [0, 1, 2].flatMap((row) =>
   [0, 1, 2].map((col) => ({
     id: 901 + row * 3 + col,
     type: "audio" as const,
+    noise: "rural" as const,
     ...at(row * SPACING_M, col * SPACING_M),
   })),
 );

@@ -10,6 +10,7 @@ const props = defineProps<{
   track: AcousticTrack | null;
   hearing: Bearing[];
   sensors: Sensor[];
+  selected: number | null;
 }>();
 const emit = defineEmits<{ select: [s: Sensor] }>();
 
@@ -71,7 +72,7 @@ const checks = computed(() => {
         v-for="s in audio"
         :key="s.id"
         class="item"
-        :class="{ on: bearingOf(s) }"
+        :class="{ on: bearingOf(s), selected: s.id === selected }"
         @click="emit('select', s)"
       >
         <span class="sq" :style="{ background: bearingOf(s) ? SENSOR_TYPES.audio.color : 'var(--faint)' }">
@@ -179,6 +180,10 @@ code {
 }
 .item:hover {
   background: var(--hover);
+}
+.item.selected {
+  background: var(--selected);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 .item.on {
   color: var(--text-strong);

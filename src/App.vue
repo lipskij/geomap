@@ -93,6 +93,7 @@ const showZones = ref(false);
 
 // Monitor: live drones. Planner: place sensors on the map (the right panel switches)
 const mode = ref<"monitor" | "planner" | "detection">("monitor");
+const selectedSensor = ref<number | null>(null); // planner / detection: highlighted sensor
 const placing = ref<SensorType | null>(null); // planner tool picked for click-to-place
 const overlap = ref<SensorType | "all" | null>("all"); // planner overlap shading, null = off
 const liveInPlanner = ref(false); // planner switch: also show live drones and monitoring
@@ -246,6 +247,7 @@ function onExport(id: string, format: ExportFormat) {
     :sensors="mode === 'detection' ? acousticSensors : plan.sensors.value"
     :planning="mode === 'planner'"
     :show-sensors="mode !== 'monitor'"
+    :selected-sensor="selectedSensor"
     :placing="placing"
     :overlap="overlap"
     :show-drones="showDrones"
@@ -254,6 +256,7 @@ function onExport(id: string, format: ExportFormat) {
     @unfollow="following = null"
     @add-sensor="plan.add"
     @move-sensor="plan.move"
+    @select-sensor="(id) => (selectedSensor = id)"
   />
   <div class="mode" role="tablist">
     <button
@@ -274,10 +277,12 @@ function onExport(id: string, format: ExportFormat) {
     :overlap="overlap"
     :save-error="plan.saveError.value"
     :show-live="liveInPlanner"
+    :selected="selectedSensor"
     @pick="(type) => (placing = type)"
-    @select="(s) => mapView?.panTo(s.lat, s.lng)"
+    @select="(s) => ((selectedSensor = s.id), mapView?.panTo(s.lat, s.lng))"
     @remove="plan.remove"
     @mast="plan.setMast"
+    @noise="plan.setNoise"
     @clear="plan.clear"
     @rename="(n) => (plan.name.value = n)"
     @overlap="(v) => (overlap = v)"
@@ -294,7 +299,8 @@ function onExport(id: string, format: ExportFormat) {
     :track="acoustic"
     :hearing="hearing"
     :sensors="acousticSensors"
-    @select="(s) => mapView?.panTo(s.lat, s.lng)"
+    :selected="selectedSensor"
+    @select="(s) => ((selectedSensor = s.id), mapView?.panTo(s.lat, s.lng))"
   />
   <LayersPanel
     v-model:base="base"

@@ -9,9 +9,9 @@ const SIZE = 256;
 const tiles = new Map<string, Promise<Float32Array | null>>();
 const ready = new Map<string, Float32Array | null>();
 
-// Global pixel position at zoom Z (Web Mercator)
-function pixel(lat: number, lng: number): [number, number] {
-  const n = SIZE * 2 ** Z;
+// Global pixel position at zoom z (Web Mercator, 256 px tiles)
+export function pixel(lat: number, lng: number, z = Z): [number, number] {
+  const n = SIZE * 2 ** z;
   const r = (lat * Math.PI) / 180;
   return [((lng + 180) / 360) * n, ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n];
 }
