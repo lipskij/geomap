@@ -108,7 +108,8 @@ async function drawOverlap() {
   }
   const pick = props.overlap;
   const circles = props.sensors
-    .filter((s) => pick === "all" || s.type === pick)
+    // "all": every sensor that can take part in a cross-bearing (Remote ID can't)
+    .filter((s) => (pick === "all" ? SENSOR_TYPES[s.type].bearing : s.type === pick))
     .map((s) => ({
       lat: s.lat,
       lng: s.lng,

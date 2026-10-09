@@ -22,14 +22,16 @@ export interface Plan {
 }
 
 // ponytail: rough default detection ranges per type; per-sensor values come later
-// with the real sensor list. lineOfSight: hills hide drones from it (sound bends around them)
+// with the real sensor list. lineOfSight: hills hide drones from it (sound bends around them).
+// bearing: reports a direction only, so 2+ must cross to place a drone; Remote ID doesn't
+// (the drone broadcasts its own position: one receiver is enough, more are backup)
 export const SENSOR_TYPES: Record<
   SensorType,
-  { icon: IconName; color: string; range: number; lineOfSight: boolean }
+  { icon: IconName; color: string; range: number; lineOfSight: boolean; bearing: boolean }
 > = {
-  rid: { icon: "sensors", color: "#1f7ae0", range: 1000, lineOfSight: true },
-  audio: { icon: "mic", color: "#8e44ad", range: 300, lineOfSight: false },
-  video: { icon: "videocam", color: "#0f9d8a", range: 800, lineOfSight: true },
+  rid: { icon: "sensors", color: "#1f7ae0", range: 1000, lineOfSight: true, bearing: false },
+  audio: { icon: "mic", color: "#8e44ad", range: 300, lineOfSight: false, bearing: true },
+  video: { icon: "videocam", color: "#0f9d8a", range: 800, lineOfSight: true, bearing: true },
 };
 
 export type Noise = "rural" | "suburban" | "urban";
@@ -39,8 +41,17 @@ export type Noise = "rural" | "suburban" | "urban";
 // same low frequencies. ponytail: first guesses, measure with the real arrays
 export const ACOUSTIC_RANGE: Record<Noise, number> = { rural: 500, suburban: 300, urban: 150 };
 
+// A higher mast clears trees, buildings and fences: +5 % range per metre above the default
+// mast, 0.85× at ground level, at most 2×. Sound bends around clutter: audio not scaled.
+// ponytail: guessed rule while terrain is bare ground (EU-DEM); drop it once a surface
+// model with trees and buildings (national LiDAR) makes the line-of-sight check do this
+const mastGain = (s: Sensor) =>
+  Math.min(2, Math.max(0.85, 1 + (mastOf(s) - SENSOR_MAST_M) * 0.05));
+
 export const rangeOf = (s: Sensor) =>
-  s.type === "audio" ? ACOUSTIC_RANGE[noiseOf(s)] : SENSOR_TYPES[s.type].range;
+  s.type === "audio"
+    ? ACOUSTIC_RANGE[noiseOf(s)]
+    : Math.round(SENSOR_TYPES[s.type].range * mastGain(s));
 export const noiseOf = (s: Sensor): Noise => s.noise ?? s.autoNoise ?? "suburban";
 export const mastOf = (s: Sensor) => s.mastM ?? SENSOR_MAST_M;
 

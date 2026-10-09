@@ -63,11 +63,11 @@ const counts = computed(() =>
 // limited to one type); null when the sensor isn't part of the overlap view
 function overlaps(s: Sensor): number | null {
   const pick = props.overlap ?? "all";
-  if (pick !== "all" && s.type !== pick) return null;
+  if (pick === "all" ? !SENSOR_TYPES[s.type].bearing : s.type !== pick) return null;
   return props.sensors.filter(
     (o) =>
       o.id !== s.id &&
-      (pick === "all" || o.type === pick) &&
+      (pick === "all" ? SENSOR_TYPES[o.type].bearing : o.type === pick) &&
       distanceM(s, o) < rangeOf(s) + rangeOf(o),
   ).length;
 }
@@ -185,8 +185,8 @@ async function onImport(e: Event) {
         </select>
       </label>
       <div v-if="overlap !== null" class="legend">
-        <span><i class="two" />{{ t("plan.overlap2") }}</span>
-        <span><i class="three" />{{ t("plan.overlap3") }}</span>
+        <span><i class="two" />{{ t(overlap === "rid" ? "plan.rid2" : "plan.overlap2") }}</span>
+        <span><i class="three" />{{ t(overlap === "rid" ? "plan.rid3" : "plan.overlap3") }}</span>
         <span><i class="hidden" />{{ t("plan.hidden") }}</span>
       </div>
     </div>
@@ -211,12 +211,43 @@ async function onImport(e: Event) {
         :data-id="s.id"
         :aria-current="s.id === selected"
       >
-        <button class="row" @click="emit('select', s)">
+        <!-- Row div, not a button: the noise picker sits inside it. The name button keeps it
+             keyboard-reachable; its click bubbles up to the row -->
+        <div class="row" @click="emit('select', s)">
           <span class="sq" :style="{ background: SENSOR_TYPES[s.type].color }">
             <Icon :name="SENSOR_TYPES[s.type].icon" />
           </span>
           <span class="main">
-            <span class="name">{{ typeName(s.type) }} #{{ s.id }}</span>
+            <button class="name">{{ typeName(s.type) }} #{{ s.id }}</button>
+            <!-- stop: editing here mustn't select the sensor and fly the map to it -->
+            <span class="controls" @click.stop>
+              <select
+                v-if="s.type === 'audio'"
+                class="noise"
+                :value="s.noise ?? ''"
+                :title="t('plan.noise')"
+                :aria-label="t('plan.noise')"
+                @change="emit('noise', s.id, (($event.target as HTMLSelectElement).value || undefined) as Noise | undefined)"
+              >
+                <option value="">{{ s.autoNoise ? t("noise.auto", { n: t(`noise.${s.autoNoise}`) }) : t("noise.autoPending") }}</option>
+                <option v-for="n in NOISES" :key="n" :value="n">{{ t(`noise.${n}`) }}</option>
+              </select>
+              <label class="mast" :title="t('plan.mast')">
+                <input
+                  type="number"
+                  min="0"
+                  :max="MAX_MAST_M"
+                  step="1"
+                  :value="mastOf(s)"
+                  :aria-label="t('plan.mast')"
+                  @change="onMast(s, $event)"
+                />
+                m
+              </label>
+              <button class="action" :title="t('plan.remove')" @click="emit('remove', s.id)">
+                <Icon name="trash" />
+              </button>
+            </span>
             <code>{{ fmtPos(s.lat, s.lng) }}</code>
             <span class="meta">
               {{ rangeOf(s) }} m
@@ -225,33 +256,7 @@ async function onImport(e: Event) {
               </template>
             </span>
           </span>
-        </button>
-        <select
-          v-if="s.type === 'audio'"
-          class="noise"
-          :value="s.noise ?? ''"
-          :title="t('plan.noise')"
-          :aria-label="t('plan.noise')"
-          @change="emit('noise', s.id, (($event.target as HTMLSelectElement).value || undefined) as Noise | undefined)"
-        >
-          <option value="">{{ s.autoNoise ? t("noise.auto", { n: t(`noise.${s.autoNoise}`) }) : t("noise.autoPending") }}</option>
-          <option v-for="n in NOISES" :key="n" :value="n">{{ t(`noise.${n}`) }}</option>
-        </select>
-        <label class="mast" :title="t('plan.mast')">
-          <input
-            type="number"
-            min="0"
-            :max="MAX_MAST_M"
-            step="1"
-            :value="mastOf(s)"
-            :aria-label="t('plan.mast')"
-            @change="onMast(s, $event)"
-          />
-          m
-        </label>
-        <button class="action" :title="t('plan.remove')" @click="emit('remove', s.id)">
-          <Icon name="trash" />
-        </button>
+        </div>
       </li>
     </ul>
 
@@ -483,6 +488,17 @@ async function onImport(e: Event) {
   align-items: center;
   gap: 10px;
   padding: 7px 4px 7px 8px;
+  cursor: pointer;
+}
+/* Noise, mast height and delete on one line under the name */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 0;
+}
+button.name {
+  padding: 0;
 }
 .row .sq {
   width: 28px;
@@ -490,6 +506,7 @@ async function onImport(e: Event) {
   font-size: 17px;
 }
 .main {
+  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -505,7 +522,7 @@ code {
 }
 .noise {
   flex: none;
-  padding: 3px 2px;
+  padding: 1px 2px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--panel);
