@@ -126,20 +126,6 @@ GitHub Pages builds read `VITE_USE_MOCK` and `VITE_API_URL` from the repository 
 
 Each response must list every drone currently seen (latest frame per drone): a drone missing from a response is dropped from the map. `received` (Unix seconds, set by the backend when the frame arrived) is used as the drone's last-seen time; the drone's own `unix time` is ignored because drone clocks are often wrong. Until the backend sends `received`, the browser's time is used.
 
-## Drone zones (local only)
-
-When running `npm run dev`, the app loads Lithuanian UAS geographical zones from the ANS UTM map (`utm.ans.lt`) through the Vite dev server and:
-
-- draws them as a "Drone zones" layer, off by default, switched on in the layers panel (red: prohibited, amber: authorisation required, grey: information)
-- checks each object: inside a zone horizontally and between the zone's lower and upper limit
-- flags objects above 120 m
-- alerts when an object enters a prohibited zone or goes above 120 m
-- counts prohibited zone entries in the flight stats
-
-Only zones active at the current time are used; zones reload every 5 minutes. Altitude is treated as height above ground, since all zone limits are AGL.
-
-Zones are not loaded in production builds (GitHub Pages).
-
 ## Project structure
 
 ```
