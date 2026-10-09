@@ -7,6 +7,7 @@ import { useSensors, type SensorType } from "./composables/useSensors";
 import DroneList from "./components/DroneList.vue";
 import ToastStack from "./components/ToastStack.vue";
 import ReplayPanel from "./components/ReplayPanel.vue";
+import DetectionPanel from "./components/DetectionPanel.vue";
 import {
   REPLAY_PREFIX,
   trackStats,
@@ -17,6 +18,9 @@ import { useDetections } from "./composables/useDetections";
 import { useTrackHistory } from "./composables/useTrackHistory";
 import { useToasts } from "./composables/useToasts";
 import { useZones } from "./composables/useZones";
+import { ACOUSTIC_ID, useAcoustic } from "./composables/useAcoustic";
+import { MOCK_ACOUSTIC_SENSORS } from "./mock/acoustic";
+import { USE_MOCK } from "./api";
 import {
   checkPosition,
   isZoneActive,
@@ -88,13 +92,16 @@ const base = ref<BaseLayer>("light");
 const showZones = ref(false);
 
 // Monitor: live drones. Planner: place sensors on the map (the right panel switches)
-const mode = ref<"monitor" | "planner">("monitor");
+const mode = ref<"monitor" | "planner" | "detection">("monitor");
 const placing = ref<SensorType | null>(null); // planner tool picked for click-to-place
 const overlap = ref<SensorType | "all" | null>("all"); // planner overlap shading, null = off
 const liveInPlanner = ref(false); // planner switch: also show live drones and monitoring
-const showDrones = computed(() => mode.value === "monitor" || liveInPlanner.value);
+const showDrones = computed(() => mode.value !== "planner" || liveInPlanner.value);
 const plan = useSensors();
-watch(mode, () => (placing.value = null));
+watch(mode, (m) => {
+  placing.value = null;
+  if (m === "detection") nextTick(() => mapView.value?.fitSensors()); // show the mesh
+});
 // Panels follow the base map: dark colours on the dark map, light ones otherwise
 watch(
   base,
@@ -113,6 +120,16 @@ const activeDrones = computed(() => {
 
 const { toasts, dismiss, push, alerts, clearAlerts } = useToasts(activeDrones);
 const { zones, error: zonesError } = useZones();
+// Drone heard by 2+ acoustic sensors: warn once per target
+// Acoustic sensors: the mock mesh while mocking, otherwise the planned audio sensors
+const acousticSensors = computed(() =>
+  USE_MOCK
+    ? MOCK_ACOUSTIC_SENSORS
+    : plan.sensors.value.filter((s) => s.type === "audio"),
+);
+const { track: acoustic, hearing } = useAcoustic(acousticSensors, (n) =>
+  push(ACOUSTIC_ID, "msg.acoustic", { n }, "alert"),
+);
 
 // Zones active right now. Re-checked every poll, but only replaced when the
 // set changes, so the map doesn't redraw these layers every second.
@@ -169,6 +186,11 @@ watch(activeDrones, (list) => {
 });
 
 function focusDrone(id: string): boolean {
+  // The acoustic target has no marker of its own: its details live in the detection panel
+  if (id === ACOUSTIC_ID) {
+    mode.value = "detection";
+    return true;
+  }
   // Focusing another drone cancels follow, otherwise the map jumps between the two
   if (following.value && following.value !== id) following.value = null;
   selected.value = id;
@@ -221,18 +243,21 @@ function onExport(id: string, format: ExportFormat) {
     :right-inset="340"
     :base="base"
     :show-zones="showZones"
-    :sensors="plan.sensors.value"
+    :sensors="mode === 'detection' ? acousticSensors : plan.sensors.value"
     :planning="mode === 'planner'"
+    :show-sensors="mode !== 'monitor'"
     :placing="placing"
     :overlap="overlap"
     :show-drones="showDrones"
+    :acoustic="acoustic"
+    :acoustic-sensors="acousticSensors"
     @unfollow="following = null"
     @add-sensor="plan.add"
     @move-sensor="plan.move"
   />
   <div class="mode" role="tablist">
     <button
-      v-for="m in ['monitor', 'planner'] as const"
+      v-for="m in ['monitor', 'planner', 'detection'] as const"
       :key="m"
       role="tab"
       :aria-selected="mode === m"
@@ -264,6 +289,13 @@ function onExport(id: string, format: ExportFormat) {
       }
     "
   />
+  <DetectionPanel
+    v-if="mode === 'detection'"
+    :track="acoustic"
+    :hearing="hearing"
+    :sensors="acousticSensors"
+    @select="(s) => mapView?.panTo(s.lat, s.lng)"
+  />
   <LayersPanel
     v-model:base="base"
     v-model:show-zones="showZones"
@@ -277,8 +309,10 @@ function onExport(id: string, format: ExportFormat) {
     :checks="checks"
     :stats-for="statsFor"
     :alerts="alerts"
+    :acoustic="acoustic"
     @select="focusDrone"
     @clear-alerts="clearAlerts"
+    @open-detection="mode = 'detection'"
     @follow="setFollow"
     @export="onExport"
   />

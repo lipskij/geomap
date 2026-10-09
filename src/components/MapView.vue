@@ -13,6 +13,7 @@ import { overlapImage } from "../coverage";
 import { elevation, loadTerrain } from "../terrain";
 import { lang, t, type MsgKey } from "../i18n";
 import { ICONS, type IconName } from "../icons";
+import { offset, type AcousticTrack } from "../acoustic";
 
 export type BaseLayer = "light" | "dark" | "map" | "satellite";
 
@@ -26,9 +27,12 @@ const props = defineProps<{
   showZones: boolean;
   sensors: Sensor[];
   planning: boolean; // planner mode: sensors can be dropped, placed and dragged
+  showSensors: boolean; // sensor markers + coverage circles (planner, detection)
   placing: SensorType | null; // type picked in the planner; next map click places it
   overlap: SensorType | "all" | null; // shade where these sensors' ranges overlap; null = off
   showDrones: boolean; // false hides drone markers and paths (they keep updating)
+  acoustic: AcousticTrack | null; // drone located by crossing acoustic bearings
+  acousticSensors: Sensor[]; // the sensors its bearings come from
 }>();
 const emit = defineEmits<{
   unfollow: [];
@@ -170,6 +174,47 @@ function syncSensors() {
     if (props.planning) l.marker.dragging?.enable();
     else l.marker.dragging?.disable();
   }
+}
+
+// Acoustic target: a wedge per sensor that hears it (bearing ± error, out to its range),
+// the fix where the wedges cross, its recent fixes, and a heading arrow with an error fan.
+// Redrawn whole each poll: a handful of shapes
+const ACOUSTIC_COLOR = "#dc2626";
+let acousticLayer: L.LayerGroup | null = null;
+function drawAcoustic(a: AcousticTrack | null) {
+  if (!map) return;
+  acousticLayer ??= L.layerGroup().addTo(map);
+  acousticLayer.clearLayers();
+  if (!a) return;
+  const opts = { pane: "dronePaths", renderer: pathRenderer, interactive: false };
+  const fan = (p: { lat: number; lng: number }, m: number, deg: number, sigma: number) => {
+    const pts: L.LatLngTuple[] = [[p.lat, p.lng]];
+    for (let i = -4; i <= 4; i++) pts.push(offset(p, m, deg + (sigma * i) / 4));
+    return pts;
+  };
+  const audio = SENSOR_TYPES.audio.color;
+  for (const b of a.bearings) {
+    const s = props.acousticSensors.find((x) => x.id === b.sensorId);
+    if (!s) continue;
+    L.polygon(fan(s, rangeOf(s), b.deg, b.sigmaDeg), { ...opts, color: audio, weight: 1, fillOpacity: 0.18 }).addTo(acousticLayer);
+    L.circleMarker([s.lat, s.lng], { ...opts, radius: 4, color: audio, fillOpacity: 1 }).addTo(acousticLayer);
+  }
+  const last = a.fixes[a.fixes.length - 1];
+  const stale = !a.bearings.length; // no current crossing: fading out
+  L.polyline(a.fixes.map((f) => [f.lat, f.lng]), { ...opts, color: ACOUSTIC_COLOR, weight: 2, dashArray: "4,4" }).addTo(acousticLayer);
+  const h = a.heading;
+  if (h) {
+    const len = Math.max(100, h.speed * 10); // where it'll be in ~10 s
+    L.polygon(fan(last, len, h.deg, Math.min(h.sigmaDeg, 60)), { ...opts, color: ACOUSTIC_COLOR, weight: 0, fillOpacity: 0.15 }).addTo(acousticLayer);
+    L.polyline([[last.lat, last.lng], offset(last, len, h.deg)], { ...opts, color: ACOUSTIC_COLOR, weight: 3 }).addTo(acousticLayer);
+  }
+  const tip = [
+    `<b>${esc(t("acoustic.fix"))}</b> · ${last.sensors} 🎤 · ±${last.errM.toFixed(0)} m`,
+    h ? `${esc(t("acoustic.heading"))}: ${h.deg.toFixed(0)}° ±${h.sigmaDeg.toFixed(0)}° · ${(h.speed * 3.6).toFixed(0)} km/h` : "",
+  ].join("<br>");
+  L.circle([last.lat, last.lng], { pane: "dronePaths", renderer: pathRenderer, radius: Math.max(last.errM, 5), color: ACOUSTIC_COLOR, weight: 2, opacity: stale ? 0.4 : 1, fillOpacity: stale ? 0.1 : 0.3 })
+    .bindTooltip(tip)
+    .addTo(acousticLayer);
 }
 
 // Sensor dragged from the planner palette and dropped on the map
@@ -553,7 +598,7 @@ onMounted(() => {
   map.createPane("sensorAreas").style.zIndex = "410"; // coverage circles + overlap, under drone paths
   map.createPane("sensors").style.zIndex = "605"; // sensor markers, under drone markers
   sensorRenderer = L.svg({ pane: "sensorAreas", padding: 2 });
-  showPanes(SENSOR_PANES, props.planning);
+  showPanes(SENSOR_PANES, props.showSensors);
   const osm = (className?: string) =>
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
@@ -603,8 +648,9 @@ watch(() => props.zones, renderZoneLayer);
 watch(() => props.base, showBase);
 watch(() => props.showZones, showZoneLayer);
 watch(() => props.showDrones, (on) => showPanes(DRONE_PANES, on));
-watch(() => props.planning, (on) => showPanes(SENSOR_PANES, on));
+watch(() => props.showSensors, (on) => showPanes(SENSOR_PANES, on));
 watch(() => [props.sensors, props.planning], syncSensors, { deep: true });
+watch(() => props.acoustic, drawAcoustic);
 watch(() => [props.sensors, props.planning, props.overlap], drawOverlap, { deep: true });
 
 // Leaflet content is plain DOM: relabel it when the language changes

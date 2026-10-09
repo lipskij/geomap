@@ -1,7 +1,9 @@
 import type { Detection, Detections } from './types'
 import { getMockDetections } from './mock/detections'
+import type { Bearing } from './acoustic'
+import { getMockBearings } from './mock/acoustic'
 
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
+export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
 // Backend origin, e.g. https://api.example.com; empty = same origin as the app
 export const API_URL = import.meta.env.VITE_API_URL ?? ''
 
@@ -42,4 +44,10 @@ export async function fetchDetections(): Promise<Detections> {
   const body: RawDetection | RawDetection[] = await res.json()
   const raws = Array.isArray(body) ? body : [body]
   return Object.fromEntries(raws.map(r => [r['uav id'], toDetection(r)]))
+}
+
+// ponytail: no acoustic feed exists yet, so only the mock produces bearings;
+// fetch from the backend here once the arrays report somewhere
+export async function fetchBearings(): Promise<Bearing[]> {
+  return USE_MOCK ? getMockBearings() : []
 }

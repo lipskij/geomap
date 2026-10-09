@@ -9,6 +9,8 @@ import type { ZoneCheck } from "../zones";
 import { colorFor } from "../colors";
 import { locale, t } from "../i18n";
 import { FADE_SECONDS } from "../config";
+import { assess, type AcousticTrack } from "../acoustic";
+import { ACOUSTIC_ID } from "../composables/useAcoustic";
 import {
   fmtClock,
   REPLAY_PREFIX,
@@ -22,12 +24,14 @@ const props = defineProps<{
   checks?: Record<string, ZoneCheck>;
   statsFor: (id: string) => TrackStats | null; // shown when a drone row is expanded
   alerts: Alert[]; // newest first
+  acoustic: AcousticTrack | null; // drone located by acoustic sensors only
 }>();
 const emit = defineEmits<{
   select: [id: string];
   follow: [id: string | null];
   export: [id: string, format: ExportFormat];
   clearAlerts: [];
+  openDetection: [];
 }>();
 
 const open = ref(true);
@@ -36,7 +40,17 @@ const formats: ExportFormat[] = ["gpx", "kml", "csv"];
 
 const alertsOpen = ref(false);
 // Alerts of drones no longer on the map can't be focused
-const present = computed(() => new Set(props.drones.map((d) => d.basic_id)));
+const present = computed(
+  () =>
+    new Set([
+      ...props.drones.map((d) => d.basic_id),
+      ...(props.acoustic ? [ACOUSTIC_ID] : []),
+    ]),
+);
+// Recomputed every poll (the track is replaced each tick)
+const acousticOk = computed(() =>
+  props.acoustic ? assess(props.acoustic, Date.now()).ok : false,
+);
 
 const expanded = ref<string | null>(null); // drone whose stats are shown
 // Recomputed on every poll (new drones array), so live values follow the flight
@@ -74,12 +88,34 @@ function doExport(id: string, f: ExportFormat) {
   <section class="side-panel">
     <button class="header" :aria-expanded="open" @click="open = !open">
       <span class="panel-title">
-        <Icon name="drone" />{{ t("list.drones", { n: drones.length }) }}
+        <Icon name="drone" />{{ t("list.drones", { n: drones.length + (acoustic ? 1 : 0) }) }}
       </span>
     </button>
 
     <ul v-if="open" class="list">
-      <li v-if="!sorted.length" class="empty">{{ t("list.empty") }}</li>
+      <li v-if="!sorted.length && !acoustic" class="empty">{{ t("list.empty") }}</li>
+      <li v-if="acoustic" class="item">
+        <div class="line">
+          <button class="row" @click="emit('openDetection')">
+            <span class="disc" :style="{ background: 'var(--danger)' }">
+              <Icon name="mic" />
+            </span>
+            <span class="main">
+              <span class="id">{{ t("acoustic.target") }}</span>
+              <span class="badge" :class="acousticOk ? 'ok' : 'alert'">
+                {{ acousticOk ? "OK" : "NOT OK" }}
+              </span>
+              <span class="meta">
+                <template v-if="acoustic.heading">
+                  {{ (acoustic.heading.speed * 3.6).toFixed(0) }} km/h ·
+                  {{ acoustic.heading.deg.toFixed(0) }}° ·
+                </template>
+                {{ t("acoustic.sensors", { n: acoustic.fixes[acoustic.fixes.length - 1].sensors }) }}
+              </span>
+            </span>
+          </button>
+        </div>
+      </li>
       <li
         v-for="d in sorted"
         :key="d.basic_id"
@@ -307,6 +343,10 @@ function doExport(id: string, f: ExportFormat) {
 .badge.warn {
   background: var(--warn-bg);
   color: var(--warn);
+}
+.badge.ok {
+  background: var(--ok-bg);
+  color: var(--ok);
 }
 .badge.info {
   background: var(--hover);
