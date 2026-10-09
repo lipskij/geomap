@@ -9,7 +9,7 @@ export interface ReplayPoint {
   lng: number;
   alt: number; // m
   speed?: number; // m/s
-  rssi?: number;
+  rssi?: number | null;
   pilotLat?: number;
   pilotLng?: number;
 }

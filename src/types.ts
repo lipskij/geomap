@@ -1,7 +1,7 @@
 // Mirrors WiFi-RemoteID /api/detections entries
 export interface Detection {
   basic_id: string;
-  rssi: number;
+  rssi: number | null; // null: the receiver reported no signal strength
   drone_lat: number;
   drone_long: number;
   drone_altitude: number;

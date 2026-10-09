@@ -78,9 +78,11 @@ const checks = computed(() => {
         <span class="sq" :style="{ background: bearingOf(s) ? SENSOR_TYPES.audio.color : 'var(--faint)' }">
           <Icon name="mic" />
         </span>
-        <span class="name">{{ t("plan.audio") }} #{{ s.id }}</span>
+        <span class="name">{{ s.name ?? `${t("plan.audio")} #${s.id}` }}</span>
         <span class="state">
-          <template v-if="bearingOf(s)">{{ bearingOf(s)!.deg.toFixed(0) }}° ±{{ bearingOf(s)!.sigmaDeg }}°</template>
+          <template v-if="s.offline">{{ t("det.offline") }}</template>
+          <template v-else-if="bearingOf(s) && bearingOf(s)!.sigmaDeg >= 90">{{ t("det.noBearing") }}</template>
+          <template v-else-if="bearingOf(s)">{{ bearingOf(s)!.deg.toFixed(0) }}° ±{{ bearingOf(s)!.sigmaDeg }}°</template>
           <template v-else>{{ t("det.silent") }}</template>
         </span>
       </li>

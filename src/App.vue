@@ -20,7 +20,8 @@ import { useToasts } from "./composables/useToasts";
 import { useZones } from "./composables/useZones";
 import { ACOUSTIC_ID, useAcoustic } from "./composables/useAcoustic";
 import { MOCK_ACOUSTIC_SENSORS } from "./mock/acoustic";
-import { USE_MOCK } from "./api";
+import { source } from "./api";
+import { liveNodes, liveStatus, onContactAlert } from "./live";
 import {
   checkPosition,
   isZoneActive,
@@ -121,12 +122,20 @@ const activeDrones = computed(() => {
 
 const { toasts, dismiss, push, alerts, clearAlerts } = useToasts(activeDrones);
 const { zones, error: zonesError } = useZones();
-// Drone heard by 2+ acoustic sensors: warn once per target
-// Acoustic sensors: the mock mesh while mocking, otherwise the planned audio sensors
+// Acoustic sensors: the mock mesh, or the backend's nodes on the live feed
 const acousticSensors = computed(() =>
-  USE_MOCK
-    ? MOCK_ACOUSTIC_SENSORS
-    : plan.sensors.value.filter((s) => s.type === "audio"),
+  source.value === "mock" ? MOCK_ACOUSTIC_SENSORS : liveNodes.value,
+);
+// Drone heard by 2+ acoustic sensors: warn once per target. The backend also raises its
+// own alarm for a contact (a drone without Remote ID)
+onContactAlert((c) =>
+  push(ACOUSTIC_ID, "msg.contactAlert", { what: c.latest?.classes?.join(", ") || "?" }, "alert"),
+);
+// Live feed problems that need the user (bad or missing key); drops just reconnect
+const liveError = computed(() =>
+  source.value === "live" && ["badKey", "noKey", "refused"].includes(liveStatus.value)
+    ? t(`live.${liveStatus.value}`)
+    : null,
 );
 const { track: acoustic, hearing } = useAcoustic(acousticSensors, (n) =>
   push(ACOUSTIC_ID, "msg.acoustic", { n }, "alert"),
@@ -230,7 +239,8 @@ function onExport(id: string, format: ExportFormat) {
 </script>
 
 <template>
-  <p v-if="error" class="error">{{ t("err.detections", { e: error }) }}</p>
+  <p v-if="liveError" class="error">{{ liveError }}</p>
+  <p v-else-if="error" class="error">{{ t("err.detections", { e: error }) }}</p>
   <p v-else-if="zonesError" class="error">
     {{ t("err.zones", { e: zonesError }) }}
   </p>
@@ -258,6 +268,18 @@ function onExport(id: string, format: ExportFormat) {
     @move-sensor="plan.move"
     @select-sensor="(id) => (selectedSensor = id)"
   />
+  <!-- Data source: built-in mock data or the backend live feed (dot = connection) -->
+  <div class="source">
+    <button
+      v-for="s in ['mock', 'live'] as const"
+      :key="s"
+      :aria-pressed="source === s"
+      :title="s === 'live' ? t(`live.${liveStatus}`) : undefined"
+      @click="source = s"
+    >
+      <i v-if="s === 'live' && source === 'live'" class="dot" :class="liveStatus" />{{ t(`source.${s}`) }}
+    </button>
+  </div>
   <div class="mode" role="tablist">
     <button
       v-for="m in ['monitor', 'planner', 'detection'] as const"
@@ -487,6 +509,44 @@ button {
   font: 600 14px var(--font);
   color: var(--muted);
   cursor: pointer;
+}
+.source {
+  position: absolute;
+  top: 66px;
+  left: 10px;
+  z-index: 1000;
+  display: flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.source button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font: 600 12px var(--font);
+  color: var(--muted);
+}
+.source button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warn); /* connecting / retrying */
+}
+.dot.open {
+  background: var(--ok);
+}
+.dot.badKey,
+.dot.noKey,
+.dot.refused {
+  background: var(--danger);
 }
 .mode button[aria-selected="true"] {
   background: var(--accent);

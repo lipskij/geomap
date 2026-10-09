@@ -1,6 +1,6 @@
 import { ref, watch, type Ref } from "vue";
 import type { Detection } from "../types";
-import { TOAST_MS } from "../config";
+import { NEW_AGAIN_SECONDS, TOAST_MS } from "../config";
 import type { MsgKey, Params } from "../i18n";
 import { REPLAY_PREFIX } from "./useReplay";
 
@@ -21,6 +21,7 @@ export interface Alert extends Toast {
 const MAX_TOASTS = 5;
 const MAX_ALERTS = 500;
 const ALERTS_KEY = "geomap.alerts";
+const SEEN_KEY = "geomap.seenDrones"; // id -> last seen, ms; survives reloads
 
 function loadAlerts(): Alert[] {
   try {
@@ -36,7 +37,12 @@ export function useToasts(drones: Ref<Detection[]>) {
   // Every toast is also kept in the alert log (newest first), saved across reloads
   // POC storage (localStorage); move alerts + zone checks to the backend DB later
   const alerts = ref<Alert[]>(loadAlerts());
-  const seen = new Set<string>();
+  let seen: Record<string, number> = {};
+  try {
+    seen = JSON.parse(localStorage.getItem(SEEN_KEY) ?? "{}");
+  } catch {
+    // unreadable: every drone counts as new once
+  }
   let nextKey = Math.max(0, ...alerts.value.map((a) => a.key)) + 1;
 
   watch(alerts, (list) => {
@@ -69,12 +75,19 @@ export function useToasts(drones: Ref<Detection[]>) {
     setTimeout(() => dismiss(key), TOAST_MS);
   }
 
-  // First time each drone ID appears in this session
+  // A drone ID is new unless it was seen in the last NEW_AGAIN_SECONDS, reloads included
   watch(drones, (list) => {
+    const now = Date.now();
     for (const d of list) {
-      if (seen.has(d.basic_id)) continue;
-      seen.add(d.basic_id);
-      push(d.basic_id, "msg.newDrone");
+      if (!(now - (seen[d.basic_id] ?? 0) <= NEW_AGAIN_SECONDS * 1000))
+        push(d.basic_id, "msg.newDrone");
+      seen[d.basic_id] = now;
+    }
+    for (const id in seen) if (now - seen[id] > NEW_AGAIN_SECONDS * 1000) delete seen[id];
+    try {
+      localStorage.setItem(SEEN_KEY, JSON.stringify(seen));
+    } catch {
+      // not kept across reloads; still no repeats in this session
     }
   });
 

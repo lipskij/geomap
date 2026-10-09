@@ -8,7 +8,7 @@ export interface TrackPoint {
   lng: number;
   alt: number;
   speed: number; // m/s
-  rssi: number;
+  rssi: number | null;
   pilotLat: number;
   pilotLng: number;
 }

@@ -4,8 +4,8 @@ import L from "leaflet";
 import type { Detection, Detections, PathPoint } from "../types";
 import { colorFor } from "../colors";
 import { copyText, esc } from "../export";
-import { fmtPos, validPos } from "../geo";
-import { FADE_SECONDS, GAP_SECONDS, MAX_ALT_M, STALE_SECONDS } from "../config";
+import { distanceM, fmtPos, validPos } from "../geo";
+import { FADE_SECONDS, GAP_SECONDS, JUMP_M, MAX_ALT_M, STALE_SECONDS } from "../config";
 import { REPLAY_PREFIX } from "../composables/useReplay";
 import type { Restriction, Zone, ZoneCheck } from "../zones";
 import { mastOf, rangeOf, SENSOR_TYPES, type Sensor, type SensorType } from "../composables/useSensors";
@@ -177,6 +177,7 @@ function syncSensors() {
     l.circle.setLatLng([s.lat, s.lng]).setRadius(rangeOf(s));
     const sel = s.id === props.selectedSensor;
     l.marker.getElement()?.classList.toggle("selected", sel);
+    l.marker.getElement()?.classList.toggle("offline", !!s.offline);
     l.marker.setZIndexOffset(sel ? 1000 : 0);
     l.circle.setStyle({ weight: sel ? 3 : 1.5, dashArray: sel ? "" : "5,5", fillOpacity: sel ? 0.16 : 0.08 });
     if (props.planning) l.marker.dragging?.enable();
@@ -303,7 +304,7 @@ function createPopup(kind: "drone" | "pilot"): PopupView {
         ? [d.drone_lat, d.drone_long]
         : [d.pilot_lat, d.pilot_long];
     field("id")!.textContent = d.basic_id;
-    field("rssi")!.textContent = String(d.rssi);
+    field("rssi")!.textContent = d.rssi == null ? "–" : String(d.rssi);
     field("pos")!.textContent = fmtPos(lat, lng);
     if (kind === "drone") {
       field("alt")!.textContent = String(d.drone_altitude);
@@ -410,21 +411,31 @@ function upsertMarker(
     .addTo(map!);
 }
 
+const jumped = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) =>
+  distanceM(a, b) > JUMP_M;
+
+// Pilot path; a jump starts it over from the new spot
 function appendPath(path: L.Polyline, pos: L.LatLngTuple) {
   const pts = path.getLatLngs() as L.LatLng[];
   const last = pts[pts.length - 1];
-  if (!last || last.lat !== pos[0] || last.lng !== pos[1]) path.addLatLng(pos);
+  if (last && jumped(last, { lat: pos[0], lng: pos[1] })) path.setLatLngs([pos]);
+  else if (!last || last.lat !== pos[0] || last.lng !== pos[1]) path.addLatLng(pos);
 }
 
 const GAP_MS = GAP_SECONDS * 1000;
 
-// Rebuild a drone path, breaking it into a dashed link wherever data stopped for a while
+const jumpedPts = (a: PathPoint, b: PathPoint) =>
+  jumped({ lat: a[0], lng: a[1] }, { lat: b[0], lng: b[1] });
+
+// Rebuild a drone path, breaking it into a dashed link wherever data stopped for a while,
+// and leaving a plain break where it jumped farther than any flight would (JUMP_M)
 function drawPath(t: Track, pts: PathPoint[]) {
   const lines: L.LatLngTuple[][] = [[]];
   const gaps: L.LatLngTuple[][] = [];
   pts.forEach((p, i) => {
     const prev = pts[i - 1];
-    if (prev && p[2] - prev[2] > GAP_MS) {
+    if (prev && jumpedPts(prev, p)) lines.push([]);
+    else if (prev && p[2] - prev[2] > GAP_MS) {
       gaps.push([[prev[0], prev[1]], [p[0], p[1]]]);
       lines.push([]);
     }
@@ -440,7 +451,10 @@ function appendDronePath(t: Track, p: PathPoint) {
   t.last = p; // also when hovering in place, so the time keeps up
   if (last && last[0] === p[0] && last[1] === p[1]) return;
   const lines = t.dronePath.getLatLngs() as L.LatLng[][];
-  if (last && p[2] - last[2] > GAP_MS) {
+  if (last && jumpedPts(last, p)) {
+    lines.push([L.latLng(p[0], p[1])]);
+    t.dronePath.setLatLngs(lines);
+  } else if (last && p[2] - last[2] > GAP_MS) {
     const gaps = t.gapPath.getLatLngs() as L.LatLng[][];
     gaps.push([L.latLng(last[0], last[1]), L.latLng(p[0], p[1])]);
     t.gapPath.setLatLngs(gaps);
@@ -719,6 +733,10 @@ onBeforeUnmount(() => {
   border-radius: 8px; /* square: tells sensors apart from round drone markers */
   color: #fff;
   box-shadow: 0 2px 6px rgba(15, 30, 60, 0.35);
+}
+:deep(.rid-icon.offline .sensor-marker) {
+  filter: grayscale(1);
+  opacity: 0.55;
 }
 :deep(.rid-icon.selected .sensor-marker) {
   outline: 3px solid var(--accent);

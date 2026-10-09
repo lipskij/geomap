@@ -47,7 +47,8 @@ export function offset(p: Pos, m: number, d: number): [number, number] {
 // Least-squares crossing point of the bearing lines; null when fewer than 2 sensors,
 // when the lines are near parallel, or when the point lies behind a sensor
 export function crossBearings(bs: Bearing[], sensors: Map<number, Pos>): Fix | null {
-  const used = bs.filter((b) => sensors.has(b.sensorId));
+  // ±90° or wider: heard, but the direction is unknown, so it can't cross anything
+  const used = bs.filter((b) => sensors.has(b.sensorId) && b.sigmaDeg < 90);
   if (new Set(used.map((b) => b.sensorId)).size < 2) return null;
   const o = sensors.get(used[0].sensorId)!;
   const mLng = mPerDegLng(o.lat);

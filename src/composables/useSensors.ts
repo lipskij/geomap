@@ -14,6 +14,8 @@ export interface Sensor {
   mastM?: number; // mount height above ground (mast, roof); default SENSOR_MAST_M
   noise?: Noise; // audio only: background noise set by hand; unset = autoNoise
   autoNoise?: Noise; // read from the map around it (landuse.ts); not saved in plan files
+  name?: string; // backend node id (live feed nodes)
+  offline?: boolean; // backend node not reporting
 }
 
 export interface Plan {

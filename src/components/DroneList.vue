@@ -145,7 +145,7 @@ function doExport(id: string, f: ExportFormat) {
               </span>
               <span class="meta">
                 {{ (d.drone_speed * 3.6).toFixed(0) }} km/h ·
-                {{ d.drone_altitude }} m · {{ d.rssi }} dBm
+                {{ d.drone_altitude }} m<template v-if="d.rssi != null"> · {{ d.rssi }} dBm</template>
               </span>
             </span>
             <span class="age">{{ ago(d.last_update) }}</span>
