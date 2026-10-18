@@ -9,6 +9,8 @@ import type { Detections } from "./types";
 const LIVE_URL = import.meta.env.VITE_LIVE_URL ?? "wss://oracle.danius.cfd:8443/v1/live";
 // ponytail: key built into the frontend bundle, visible to anyone who loads the app;
 // fine for development, use a per-user token or a backend proxy before production
+// No token with a VITE_LIVE_URL of its own: the server sits behind a login (Cloudflare
+// Access) and the browser's login cookie authenticates the socket
 const TOKEN = import.meta.env.VITE_LIVE_TOKEN ?? "";
 const RETRY_MS = 3000; // doubles after each failed connect, up to MAX_RETRY_MS
 const MAX_RETRY_MS = 30_000;
@@ -18,7 +20,7 @@ interface LiveNode {
   lat: number;
   lon: number;
   online: boolean;
-  fake?: boolean; // position from FAKE_NODE_POS
+  type?: string; // "rid" = Remote ID receiver; anything else = camera scanner (oracle)
 }
 
 interface LiveTrack {
@@ -44,7 +46,7 @@ interface LiveTrack {
   audio_confirmed?: boolean;
 }
 
-export type LiveStatus =
+type LiveStatus =
   | "off"
   | "noKey"
   | "connecting"
@@ -86,14 +88,14 @@ function publishNodes() {
   }
   for (const id of used)
     if (!nodes.has(id) && FAKE_NODE_POS[id])
-      list.push({ node_id: id, ...FAKE_NODE_POS[id], online: true, fake: true });
+      list.push({ node_id: id, ...FAKE_NODE_POS[id], online: true });
   // Track messages call this every time: only republish when the nodes changed
   const key = JSON.stringify(list);
   if (key === nodesKey) return;
   nodesKey = key;
   liveNodes.value = list.map((n) => ({
     id: sensorId(n.node_id),
-    type: "video" as const, // scanner nodes report camera bearings (no mic arrays yet)
+    type: n.type === "rid" ? ("rid" as const) : ("video" as const), // oracle scanners: camera bearings
     lat: n.lat,
     lng: n.lon,
     name: n.node_id,
@@ -130,9 +132,9 @@ function handle(m: { type: string; data?: any; tracks?: LiveTrack[]; nodes?: Liv
 }
 
 function connect() {
-  if (!TOKEN) return void (liveStatus.value = "noKey");
+  if (!TOKEN && !import.meta.env.VITE_LIVE_URL) return void (liveStatus.value = "noKey");
   liveStatus.value = "connecting";
-  const sock = new WebSocket(`${LIVE_URL}?token=${encodeURIComponent(TOKEN)}`);
+  const sock = new WebSocket(TOKEN ? `${LIVE_URL}?token=${encodeURIComponent(TOKEN)}` : LIVE_URL);
   ws = sock;
   let opened = false;
   sock.onopen = () => {

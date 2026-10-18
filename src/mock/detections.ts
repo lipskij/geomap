@@ -1,4 +1,5 @@
 import type { Detection, Detections } from "../types";
+import { M_PER_DEG } from "../geo";
 
 interface MockDrone {
   basic_id: string;
@@ -44,8 +45,6 @@ const drones: MockDrone[] = [
   }, // loop crosses prohibited zone T4
 ];
 
-const M_PER_DEG_LAT = 111_320;
-
 const start = Date.now() / 1000;
 const lastSeen: Record<string, number> = {};
 
@@ -67,7 +66,7 @@ export function getMockDetections(): Detections {
       drone_altitude: Math.round(
         (d.alt?.[0] ?? 80) + (d.alt?.[1] ?? 20) * Math.sin(a * 2),
       ),
-      drone_speed: active ? d.radius * M_PER_DEG_LAT * Math.abs(d.speed) : 0,
+      drone_speed: active ? d.radius * M_PER_DEG * Math.abs(d.speed) : 0,
       pilot_lat: d.pilot[0],
       pilot_long: d.pilot[1],
       last_update: lastSeen[d.basic_id],

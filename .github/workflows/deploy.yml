@@ -27,8 +27,7 @@ jobs:
       - run: npm run build
         env:
           # Repo variables (Settings → Secrets and variables → Actions → Variables).
-          # Unset: mock data, as before
-          VITE_USE_MOCK: ${{ vars.VITE_USE_MOCK }}
+          # Unset: same origin
           VITE_API_URL: ${{ vars.VITE_API_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:

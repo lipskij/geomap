@@ -46,7 +46,7 @@ function fetchTile(x: number, y: number): Promise<Uint8ClampedArray | null> {
 const isBuilt = (d: Uint8ClampedArray, i: number) =>
   BUILT.some(([r, g, b]) => Math.abs(d[i] - r) + Math.abs(d[i + 1] - g) + Math.abs(d[i + 2] - b) <= TOLERANCE);
 
-export const noiseFromBuiltShare = (builtShare: number): Noise =>
+const noiseFromBuiltShare = (builtShare: number): Noise =>
   builtShare < 0.15 ? "rural" : builtShare < 0.3 ? "suburban" : "urban";
 
 // null when the map tiles can't be loaded

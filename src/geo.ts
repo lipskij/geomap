@@ -58,6 +58,7 @@ export function inPolygon(
 }
 
 const R = 6_371_000; // earth radius, m
+export const M_PER_DEG = 111_320; // metres per degree of latitude (and of longitude at the equator)
 const rad = (d: number) => (d * Math.PI) / 180;
 
 // Great-circle distance (haversine)

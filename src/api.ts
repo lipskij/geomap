@@ -10,7 +10,7 @@ export const API_URL = import.meta.env.VITE_API_URL ?? ''
 
 // Where drones come from: built-in mock data or the backend live feed. Switchable in the
 // app; the choice is remembered per browser
-export type DataSource = 'mock' | 'live'
+type DataSource = 'mock' | 'live'
 const SOURCE_KEY = 'geomap.source'
 function loadSource(): DataSource {
   try {

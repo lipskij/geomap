@@ -31,7 +31,9 @@ export const SENSOR_TYPES: Record<
   SensorType,
   { icon: IconName; color: string; range: number; lineOfSight: boolean; bearing: boolean }
 > = {
-  rid: { icon: "sensors", color: "#1f7ae0", range: 1000, lineOfSight: true, bearing: false },
+  // ESP32-S3 + 12 dBi omni (≈6–8 dBi real) + 200 mm pigtail, drone ≈16 dBm EIRP at 30 m AGL:
+  // ≈1.5 km in the open, 0.5–1 km suburban. Check against RSSI from real detections
+  rid: { icon: "sensors", color: "#1f7ae0", range: 1500, lineOfSight: true, bearing: false },
   audio: { icon: "mic", color: "#8e44ad", range: 300, lineOfSight: false, bearing: true },
   video: { icon: "videocam", color: "#0f9d8a", range: 800, lineOfSight: true, bearing: true },
 };

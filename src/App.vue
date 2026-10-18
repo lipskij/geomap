@@ -29,10 +29,10 @@ import {
   type ZoneCheck,
 } from "./zones";
 import { exportTrack, type ExportFormat } from "./export";
-import { MAX_ALT_M, POLL_MS, STALE_SECONDS, ZONES_ENABLED } from "./config";
+import { MAX_ALT_M, STALE_SECONDS, ZONES_ENABLED } from "./config";
 import { t } from "./i18n";
 
-const { detections: live, error } = useDetections(POLL_MS);
+const { detections: live, error } = useDetections();
 const replay = useReplay();
 
 // While a replay is loaded, show only the replayed drones; otherwise live (or mock) ones

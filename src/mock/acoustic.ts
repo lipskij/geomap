@@ -1,7 +1,7 @@
 import type { Bearing } from "../acoustic";
 import { offset } from "../acoustic";
 import { rangeOf, type Sensor } from "../composables/useSensors";
-import { distanceM } from "../geo";
+import { M_PER_DEG, distanceM } from "../geo";
 
 // Acoustic mesh out in farmland (rural Kėdainiai district): 3 × 3 audio sensors, 250 m apart
 const ORIGIN = { lat: 55.43, lng: 24.02 }; // south-west corner
@@ -39,8 +39,8 @@ export function getMockBearings(): Bearing[] {
   const [lat, lng] = offset(CENTER, s - PASS_M / 2, COURSE);
   const drone = { lat, lng };
   return MOCK_ACOUSTIC_SENSORS.filter((a) => distanceM(a, drone) <= rangeOf(a)).map((a) => {
-    const north = (lat - a.lat) * 111_320;
-    const east = (lng - a.lng) * 111_320 * Math.cos((a.lat * Math.PI) / 180);
+    const north = (lat - a.lat) * M_PER_DEG;
+    const east = (lng - a.lng) * M_PER_DEG * Math.cos((a.lat * Math.PI) / 180);
     const deg = (Math.atan2(east, north) * 180) / Math.PI;
     return {
       sensorId: a.id,

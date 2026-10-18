@@ -8,7 +8,7 @@ export interface Circle {
   throughTerrain?: boolean; // terrain doesn't hide drones from it (acoustic)
 }
 
-const M_PER_DEG = 111_320;
+const M_PER_DEG = 111_320; // not imported from geo.ts: scripts/coverage-check.ts runs this file in plain node
 const MAX_CELLS = 300; // per side; keeps a redraw well under a frame for dozens of sensors
 
 // RGBA per number of sensors covering a cell: 2 = cross-bearing, 3+ = triangulation
@@ -22,7 +22,7 @@ const SHADE: Record<0 | 2 | 3, [number, number, number, number]> = {
 // Line of sight from a sensor mast to a drone flying TARGET_AGL_M above the ground.
 // Higher drones are seen wherever a TARGET_AGL_M one is, and often more
 export const SENSOR_MAST_M = 3; // default mount height, editable per sensor
-export const TARGET_AGL_M = 30; // low flyers are the ones terrain hides
+const TARGET_AGL_M = 30; // low flyers are the ones terrain hides
 const RAYS = 360;
 const STEP_M = 20; // ≈ terrain pixel size
 // Earth radius bent by standard atmospheric refraction (k = 4/3, the usual radio value)

@@ -30,9 +30,10 @@ export interface AcousticTrack {
   heading?: Heading;
 }
 
+import { M_PER_DEG } from "./geo";
+
 type Pos = { lat: number; lng: number };
 
-const M_PER_DEG = 111_320;
 const rad = (d: number) => (d * Math.PI) / 180;
 const deg = (r: number) => (r * 180) / Math.PI;
 const mPerDegLng = (lat: number) => M_PER_DEG * Math.cos(rad(lat));
@@ -122,7 +123,7 @@ export const READY = {
   maxAgeS: 3,
 };
 
-export interface Readiness {
+interface Readiness {
   sensors: boolean;
   position: boolean;
   heading: boolean;
