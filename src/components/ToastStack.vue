@@ -52,6 +52,13 @@ const emit = defineEmits<{
   max-width: calc(100vw - 20px);
   pointer-events: none;
 }
+/* Phones: the drone panel takes the top; stack above the Import button instead */
+@media (max-width: 760px) {
+  .stack {
+    top: auto;
+    bottom: 84px;
+  }
+}
 .toast {
   pointer-events: auto;
   display: flex;

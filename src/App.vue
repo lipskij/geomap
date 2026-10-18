@@ -486,6 +486,35 @@ button {
   color: var(--text);
   overflow: hidden;
 }
+/* Small screens (phones, the Pi's 7" display): too short to keep the map buttons clear.
+   Use the full height, over the zoom buttons, and scroll the whole panel; collapse it to
+   get the buttons back */
+@media (max-height: 700px), (max-width: 760px) {
+  .side-panel {
+    max-height: calc(100dvh - 20px);
+    overflow-y: auto;
+  }
+  .side-panel > * {
+    flex-shrink: 0;
+  }
+  /* Title stays in reach while scrolled, to collapse the panel */
+  .side-panel > .panel-header:first-child {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--panel);
+  }
+}
+/* Phones: no room beside the tab and data switches; full width below them, half the
+   screen at most so the map stays visible */
+@media (max-width: 760px) {
+  .side-panel {
+    top: 108px;
+    left: 10px;
+    width: auto;
+    max-height: 50dvh;
+  }
+}
 .panel-title {
   display: flex;
   align-items: center;
