@@ -4,7 +4,7 @@ import vue from "@vitejs/plugin-vue";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), ""); // .env.local too, incl. VITE_LIVE_TOKEN
   return {
-    base: "./", // relative paths so it works under https://<user>.github.io/<repo>
+    base: "./", // relative asset paths: works wherever the build is served
     plugins: [vue()],
     server: {
       proxy: {
