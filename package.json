@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy:pi": "npm run build -- --mode owl && rsync -a --delete dist/ ${PI:-emil@172.20.10.6}:rid/web/ && rsync -a server/rid_server.py server/test_rid_server.py ${PI:-emil@172.20.10.6}:rid/ && ssh ${PI:-emil@172.20.10.6} 'cd rid && .venv/bin/python test_rid_server.py && sudo systemctl restart rid'"
   },
   "dependencies": {
     "leaflet": "^1.9.4",
