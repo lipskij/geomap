@@ -499,6 +499,29 @@ button {
   font-size: 18px;
   color: var(--accent);
 }
+/* Collapsible section heading: a button with a chevron that flips when it opens */
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+}
+.panel-header:hover {
+  background: var(--hover);
+}
+.panel-header::after {
+  content: "";
+  width: 1.25em;
+  height: 1.25em;
+  background: var(--muted);
+  mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='black' stroke-width='1.5'/></svg>")
+    center / contain no-repeat;
+  transition: transform 0.15s;
+  transform: scaleY(-1);
+}
+.panel-header[aria-expanded="true"]::after {
+  transform: scaleY(1);
+}
 
 /* Monitor / Planner switch, top-left; notifications stack below it */
 .mode {

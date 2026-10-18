@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { stored } from "../stored";
 import { computed, nextTick, ref, watch } from "vue";
 import Icon from "./Icon.vue";
 import {
@@ -38,14 +39,20 @@ const emit = defineEmits<{
 }>();
 
 const types = Object.keys(SENSOR_TYPES) as SensorType[];
-// Sensor picked on the map: bring its row into view
+const open = stored("geomap.open.plan", true);
+const displayOpen = stored("geomap.open.display", true); // kept here: the section is rebuilt when the panel reopens
+// Sensor picked on the map: open the panel and bring its row into view
 const panel = ref<HTMLElement>();
 watch(
   () => props.selected,
-  (id) =>
+  (id) => {
+    if (id) open.value = true;
     nextTick(() =>
-      panel.value?.querySelector(`[data-id="${id}"]`)?.scrollIntoView({ block: "nearest" }),
-    ),
+      panel.value
+        ?.querySelector(`[data-id="${id}"]`)
+        ?.scrollIntoView({ block: "nearest" }),
+    );
+  },
 );
 
 const NOISES: Noise[] = ["rural", "suburban", "urban"];
@@ -55,7 +62,10 @@ const plan = (): Plan => ({ name: props.name, sensors: props.sensors });
 // Deployment summary: how many of each type the plan needs
 const counts = computed(() =>
   types
-    .map((type) => [type, props.sensors.filter((s) => s.type === type).length] as const)
+    .map(
+      (type) =>
+        [type, props.sensors.filter((s) => s.type === type).length] as const,
+    )
     .filter(([, n]) => n),
 );
 
@@ -63,7 +73,8 @@ const counts = computed(() =>
 // limited to one type); null when the sensor isn't part of the overlap view
 function overlaps(s: Sensor): number | null {
   const pick = props.overlap ?? "all";
-  if (pick === "all" ? !SENSOR_TYPES[s.type].bearing : s.type !== pick) return null;
+  if (pick === "all" ? !SENSOR_TYPES[s.type].bearing : s.type !== pick)
+    return null;
   return props.sensors.filter(
     (o) =>
       o.id !== s.id &&
@@ -128,14 +139,21 @@ async function onImport(e: Event) {
 
 <template>
   <section ref="panel" class="side-panel">
+    <button class="panel-header" :aria-expanded="open" @click="open = !open">
+      <span class="panel-title"
+        ><Icon name="sensors" />{{ t("plan.title") }}</span
+      >
+    </button>
+    <template v-if="open">
     <header class="head">
-      <span class="panel-title"><Icon name="sensors" />{{ t("plan.title") }}</span>
       <input
         class="plan-name"
         :value="name"
         :placeholder="t('plan.namePlaceholder')"
         maxlength="100"
-        @change="emit('rename', ($event.target as HTMLInputElement).value.trim())"
+        @change="
+          emit('rename', ($event.target as HTMLInputElement).value.trim())
+        "
       />
     </header>
 
@@ -159,37 +177,66 @@ async function onImport(e: Event) {
     </div>
     <p class="hint">{{ t("plan.hint") }}</p>
 
-    <div class="overlap">
+    <details
+      class="overlap"
+      :open="displayOpen"
+      @toggle="displayOpen = ($event.target as HTMLDetailsElement).open"
+    >
+      <summary>
+        {{ t("plan.display") }}
+        <Icon name="expand" class="chev" />
+      </summary>
       <label class="check live">
         <input
           type="checkbox"
           :checked="showLive"
-          @change="emit('showLive', ($event.target as HTMLInputElement).checked)"
+          @change="
+            emit('showLive', ($event.target as HTMLInputElement).checked)
+          "
         />
         {{ t("plan.showLive") }}
       </label>
       <label class="check">
-        {{ t("plan.overlap") }}
+        <span class="title">
+          {{ t("plan.overlap") }}
+          <!-- Legend on hover/focus: same colours as the map shading -->
+          <span v-if="overlap !== null" class="info" tabindex="0" @click.prevent :aria-label="t('plan.legend')">
+            <Icon name="info" />
+            <span class="legend" role="tooltip">
+              <span
+                ><i class="two" />{{
+                  t(overlap === "rid" ? "plan.rid2" : "plan.overlap2")
+                }}</span
+              >
+              <span
+                ><i class="three" />{{
+                  t(overlap === "rid" ? "plan.rid3" : "plan.overlap3")
+                }}</span
+              >
+              <span><i class="hidden" />{{ t("plan.hidden") }}</span>
+            </span>
+          </span>
+        </span>
         <select
           :value="overlap ?? ''"
           @change="
             emit(
               'overlap',
-              (($event.target as HTMLSelectElement).value || null) as SensorType | 'all' | null,
+              (($event.target as HTMLSelectElement).value || null) as
+                | SensorType
+                | 'all'
+                | null,
             )
           "
         >
           <option value="">{{ t("plan.off") }}</option>
           <option value="all">{{ t("plan.allTypes") }}</option>
-          <option v-for="type in types" :key="type" :value="type">{{ typeName(type) }}</option>
+          <option v-for="type in types" :key="type" :value="type">
+            {{ typeName(type) }}
+          </option>
         </select>
       </label>
-      <div v-if="overlap !== null" class="legend">
-        <span><i class="two" />{{ t(overlap === "rid" ? "plan.rid2" : "plan.overlap2") }}</span>
-        <span><i class="three" />{{ t(overlap === "rid" ? "plan.rid3" : "plan.overlap3") }}</span>
-        <span><i class="hidden" />{{ t("plan.hidden") }}</span>
-      </div>
-    </div>
+    </details>
 
     <div v-if="counts.length" class="summary">
       <span v-for="[type, n] in counts" :key="type" class="chip">
@@ -227,10 +274,25 @@ async function onImport(e: Event) {
                 :value="s.noise ?? ''"
                 :title="t('plan.noise')"
                 :aria-label="t('plan.noise')"
-                @change="emit('noise', s.id, (($event.target as HTMLSelectElement).value || undefined) as Noise | undefined)"
+                @change="
+                  emit(
+                    'noise',
+                    s.id,
+                    (($event.target as HTMLSelectElement).value ||
+                      undefined) as Noise | undefined,
+                  )
+                "
               >
-                <option value="">{{ s.autoNoise ? t("noise.auto", { n: t(`noise.${s.autoNoise}`) }) : t("noise.autoPending") }}</option>
-                <option v-for="n in NOISES" :key="n" :value="n">{{ t(`noise.${n}`) }}</option>
+                <option value="">
+                  {{
+                    s.autoNoise
+                      ? t("noise.auto", { n: t(`noise.${s.autoNoise}`) })
+                      : t("noise.autoPending")
+                  }}
+                </option>
+                <option v-for="n in NOISES" :key="n" :value="n">
+                  {{ t(`noise.${n}`) }}
+                </option>
               </select>
               <label class="mast" :title="t('plan.mast')">
                 <input
@@ -244,7 +306,11 @@ async function onImport(e: Event) {
                 />
                 m
               </label>
-              <button class="action" :title="t('plan.remove')" @click="emit('remove', s.id)">
+              <button
+                class="action"
+                :title="t('plan.remove')"
+                @click="emit('remove', s.id)"
+              >
                 <Icon name="trash" />
               </button>
             </span>
@@ -261,11 +327,23 @@ async function onImport(e: Event) {
     </ul>
 
     <p v-if="importError" class="err">{{ importError }}</p>
-    <p v-if="saveError" class="err">{{ t("plan.saveError", { e: saveError }) }}</p>
+    <p v-if="saveError" class="err">
+      {{ t("plan.saveError", { e: saveError }) }}
+    </p>
 
     <footer class="foot">
-      <input ref="fileInput" type="file" accept=".csv,.json,text/csv,application/json" hidden @change="onImport" />
-      <button class="pill" :title="t('plan.importTitle')" @click="fileInput?.click()">
+      <input
+        ref="fileInput"
+        type="file"
+        accept=".csv,.json,text/csv,application/json"
+        hidden
+        @change="onImport"
+      />
+      <button
+        class="pill"
+        :title="t('plan.importTitle')"
+        @click="fileInput?.click()"
+      >
         <Icon name="upload" />{{ t("plan.import") }}
       </button>
       <div v-if="sensors.length" class="dl-menu" @focusout="onMenuBlur">
@@ -281,27 +359,31 @@ async function onImport(e: Event) {
         <div v-if="menuOpen" class="menu" role="menu">
           <button role="menuitem" @click="download('csv')">
             <Icon name="file" />
-            <span><b>CSV</b><small>{{ t("plan.csvTitle") }}</small></span>
+            <span
+              ><b>CSV</b><small>{{ t("plan.csvTitle") }}</small></span
+            >
           </button>
           <button role="menuitem" @click="download('json')">
             <Icon name="file" />
-            <span><b>JSON</b><small>{{ t("plan.downloadTitle") }}</small></span>
+            <span
+              ><b>JSON</b><small>{{ t("plan.downloadTitle") }}</small></span
+            >
           </button>
         </div>
       </div>
     </footer>
+    </template>
   </section>
 </template>
 
 <style scoped>
 .head {
-  padding: 12px 16px 8px;
+  padding: 0 16px 8px;
 }
 .plan-name {
   display: block;
   width: 100%;
   box-sizing: border-box;
-  margin-top: 8px;
   padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -356,13 +438,33 @@ async function onImport(e: Event) {
   color: var(--muted);
 }
 .overlap {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
   padding: 10px 16px;
   border-top: 1px solid var(--line);
   font-size: 13px;
+}
+.overlap[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.overlap summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  list-style: none;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.overlap summary::-webkit-details-marker {
+  display: none;
+}
+.chev {
+  font-size: 18px;
+  transition: transform 0.15s;
+}
+.overlap[open] .chev {
+  transform: rotate(180deg);
 }
 .check {
   display: flex;
@@ -371,9 +473,6 @@ async function onImport(e: Event) {
   font-weight: 600;
   cursor: pointer;
 }
-.check.live {
-  width: 100%;
-}
 .check input {
   width: 16px;
   height: 16px;
@@ -381,26 +480,60 @@ async function onImport(e: Event) {
   accent-color: var(--accent);
 }
 .overlap .check:not(.live) {
-  width: 100%;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
 }
+/* Own chevron: the native arrow ignores padding and sits against the right edge */
 .overlap select {
-  padding: 3px 8px;
+  appearance: none;
+  padding: 6px 34px 6px 12px;
   border: 0;
   border-radius: 999px;
-  background: var(--hover);
+  background: var(--hover)
+    url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='%23888' stroke-width='1.5'/></svg>")
+    no-repeat right 12px center / 14px;
   color: var(--text);
   font: inherit;
   font-size: 12px;
   font-weight: 600;
 }
-.legend {
+.title {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  width: 100%;
-  font-size: 12px;
+  align-items: center;
+  gap: 6px;
+}
+.info {
+  position: relative;
+  display: flex;
   color: var(--muted);
+  cursor: help;
+}
+.info:hover,
+.info:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+.legend {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: -8px;
+  z-index: 10;
+  flex-direction: column;
+  gap: 6px;
+  width: max-content;
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text);
+}
+.info:hover .legend,
+.info:focus .legend {
+  display: flex;
 }
 .legend span {
   display: flex;
@@ -479,7 +612,7 @@ async function onImport(e: Event) {
 }
 .item.selected {
   background: var(--selected);
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 .row {
   flex: 1;

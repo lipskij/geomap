@@ -3,7 +3,7 @@ import { offset } from "../acoustic";
 import { rangeOf, type Sensor } from "../composables/useSensors";
 import { M_PER_DEG, distanceM } from "../geo";
 
-// Acoustic mesh out in farmland (rural Kėdainiai district): 3 × 3 audio sensors, 250 m apart
+// Acoustic mesh out in farmland (rural Kėdainiai district): 2 × 2 audio sensors, 250 m apart
 const ORIGIN = { lat: 55.43, lng: 24.02 }; // south-west corner
 const SPACING_M = 250;
 const at = (northM: number, eastM: number) => {
@@ -11,9 +11,9 @@ const at = (northM: number, eastM: number) => {
   const [, lng] = offset(ORIGIN, eastM, 90);
   return { lat, lng };
 };
-export const MOCK_ACOUSTIC_SENSORS: Sensor[] = [0, 1, 2].flatMap((row) =>
-  [0, 1, 2].map((col) => ({
-    id: 901 + row * 3 + col,
+export const MOCK_ACOUSTIC_SENSORS: Sensor[] = [0, 1].flatMap((row) =>
+  [0, 1].map((col) => ({
+    id: 901 + row * 2 + col,
     type: "audio" as const,
     noise: "rural" as const,
     ...at(row * SPACING_M, col * SPACING_M),
@@ -22,7 +22,7 @@ export const MOCK_ACOUSTIC_SENSORS: Sensor[] = [0, 1, 2].flatMap((row) =>
 
 // One drone flying straight across the mesh, south-west to north-east, then quiet long
 // enough for its track to clear, then the same pass again
-const CENTER = at(SPACING_M, SPACING_M);
+const CENTER = at(SPACING_M / 2, SPACING_M / 2);
 const COURSE = 50; // deg
 const SPEED = 15; // m/s
 const PASS_M = 1400; // from well outside the mesh to well outside the other side

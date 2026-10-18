@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { stored } from "../stored";
 import { computed, ref } from "vue";
 import { snapshots, type Snapshot } from "../live";
 import type { Detection } from "../types";
@@ -36,11 +37,11 @@ const emit = defineEmits<{
   openDetection: [];
 }>();
 
-const open = ref(true);
+const open = stored("geomap.open.drones", true);
 const exportMenu = ref<string | null>(null);
 const formats: ExportFormat[] = ["gpx", "kml", "csv"];
 
-const alertsOpen = ref(false);
+const alertsOpen = stored("geomap.open.alerts", false);
 // Alerts of drones no longer on the map can't be focused
 const present = computed(
   () =>
@@ -78,7 +79,6 @@ function onRow(id: string) {
     .catch(() => {}); // sensors still listed, just without images
 }
 
-
 const sorted = computed(() =>
   [...props.drones].sort((a, b) => a.basic_id.localeCompare(b.basic_id)),
 );
@@ -102,14 +102,18 @@ function doExport(id: string, f: ExportFormat) {
 
 <template>
   <section class="side-panel">
-    <button class="header" :aria-expanded="open" @click="open = !open">
+    <button class="panel-header" :aria-expanded="open" @click="open = !open">
       <span class="panel-title">
-        <Icon name="drone" />{{ t("list.drones", { n: drones.length + (acoustic ? 1 : 0) }) }}
+        <Icon name="drone" />{{
+          t("list.drones", { n: drones.length + (acoustic ? 1 : 0) })
+        }}
       </span>
     </button>
 
     <ul v-if="open" class="list">
-      <li v-if="!sorted.length && !acoustic" class="empty">{{ t("list.empty") }}</li>
+      <li v-if="!sorted.length && !acoustic" class="empty">
+        {{ t("list.empty") }}
+      </li>
       <li v-if="acoustic" class="item">
         <div class="line">
           <button class="row" @click="emit('openDetection')">
@@ -126,7 +130,11 @@ function doExport(id: string, f: ExportFormat) {
                   {{ (acoustic.heading.speed * 3.6).toFixed(0) }} km/h ·
                   {{ acoustic.heading.deg.toFixed(0) }}° ·
                 </template>
-                {{ t("acoustic.sensors", { n: acoustic.fixes[acoustic.fixes.length - 1].sensors }) }}
+                {{
+                  t("acoustic.sensors", {
+                    n: acoustic.fixes[acoustic.fixes.length - 1].sensors,
+                  })
+                }}
               </span>
             </span>
           </button>
@@ -161,7 +169,9 @@ function doExport(id: string, f: ExportFormat) {
               </span>
               <span class="meta">
                 {{ (d.drone_speed * 3.6).toFixed(0) }} km/h ·
-                {{ d.drone_altitude }} m<template v-if="d.rssi != null"> · {{ d.rssi }} dBm</template>
+                {{ d.drone_altitude }} m<template v-if="d.rssi != null">
+                  · {{ d.rssi }} dBm</template
+                >
               </span>
             </span>
             <span class="age">{{ ago(d.last_update) }}</span>
@@ -197,11 +207,18 @@ function doExport(id: string, f: ExportFormat) {
             {{ f.toUpperCase() }}
           </button>
         </div>
-        <div v-if="expanded === d.basic_id && d.sensors?.length" class="sensors">
+        <div
+          v-if="expanded === d.basic_id && d.sensors?.length"
+          class="sensors"
+        >
           <span class="label">
             {{ t("list.sensors") }}
-            <span v-if="d.visual" :title="t('list.cameraSaw')"><Icon name="videocam" /></span>
-            <span v-if="d.audio" :title="t('list.micHeard')"><Icon name="mic" /></span>
+            <span v-if="d.visual" :title="t('list.cameraSaw')"
+              ><Icon name="videocam"
+            /></span>
+            <span v-if="d.audio" :title="t('list.micHeard')"
+              ><Icon name="mic"
+            /></span>
           </span>
           <component
             :is="snaps[s.node] ? 'button' : 'span'"
@@ -211,10 +228,17 @@ function doExport(id: string, f: ExportFormat) {
             :title="snaps[s.node] ? t('list.showSnapshot') : undefined"
             @click="snaps[s.node] && (viewing = snaps[s.node])"
           >
-            <img v-if="snaps[s.node]" class="thumb" :src="snaps[s.node].url" alt="" />
+            <img
+              v-if="snaps[s.node]"
+              class="thumb"
+              :src="snaps[s.node].url"
+              alt=""
+            />
             <span>
               <b>{{ s.node }}</b>
-              <template v-if="s.rssi != null"> · {{ s.rssi.toFixed(0) }} dBm</template>
+              <template v-if="s.rssi != null">
+                · {{ s.rssi.toFixed(0) }} dBm</template
+              >
             </span>
           </component>
         </div>
@@ -228,7 +252,7 @@ function doExport(id: string, f: ExportFormat) {
     </ul>
 
     <button
-      class="header section"
+      class="panel-header section"
       :aria-expanded="alertsOpen"
       @click="alertsOpen = !alertsOpen"
     >
@@ -272,29 +296,6 @@ function doExport(id: string, f: ExportFormat) {
 </template>
 
 <style scoped>
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-}
-.header:hover {
-  background: var(--hover);
-}
-/* Chevron: flattens and flips when the section opens */
-.header::after {
-  content: "";
-  width: 1.25em;
-  height: 1.25em;
-  background: var(--muted);
-  mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='black' stroke-width='1.5'/></svg>")
-    center / contain no-repeat;
-  transition: transform 0.15s;
-  transform: scaleY(-1);
-}
-.header[aria-expanded="true"]::after {
-  transform: scaleY(1);
-}
 .list {
   list-style: none;
   margin: 0;

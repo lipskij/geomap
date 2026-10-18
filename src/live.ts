@@ -247,6 +247,8 @@ export interface HistoryEntry {
 export async function fetchHistory(): Promise<HistoryEntry[]> {
   const r = await fetch("/v1/history");
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  // Anything but JSON (e.g. an HTML page): this live server keeps no flight logs
+  if (!r.headers.get("content-type")?.includes("json")) throw new Error("No flight history on this server");
   return r.json();
 }
 

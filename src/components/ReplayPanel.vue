@@ -43,19 +43,16 @@ function onFile(e: Event) {
       @change="onFile"
     />
 
-    <button
-      v-if="!fileName"
-      class="open"
-      :title="t('replay.open')"
-      @click="input?.click()"
-    >
-      <Icon name="upload" />
-      {{ t("replay.import") }}
-    </button>
-    <button v-if="!fileName && history" class="open" @click="emit('history')">
-      <Icon name="clock" />
-      {{ t("history.open") }}
-    </button>
+    <template v-if="!fileName">
+      <button class="open" :title="t('replay.open')" @click="input?.click()">
+        <Icon name="upload" />
+        {{ t("replay.import") }}
+      </button>
+      <button v-if="history" class="open" @click="emit('history')">
+        <Icon name="clock" />
+        {{ t("history.open") }}
+      </button>
+    </template>
 
     <template v-else>
       <div class="head">
