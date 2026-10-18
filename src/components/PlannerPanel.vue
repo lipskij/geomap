@@ -40,6 +40,7 @@ const emit = defineEmits<{
 
 const types = Object.keys(SENSOR_TYPES) as SensorType[];
 const open = stored("geomap.open.plan", true);
+const toolsOpen = stored("geomap.open.tools", true);
 const displayOpen = stored("geomap.open.display", true); // kept here: the section is rebuilt when the panel reopens
 // Sensor picked on the map: open the panel and bring its row into view
 const panel = ref<HTMLElement>();
@@ -145,7 +146,15 @@ async function onImport(e: Event) {
       >
     </button>
     <template v-if="open">
-    <header class="head">
+    <details
+      class="group"
+      :open="toolsOpen"
+      @toggle="toolsOpen = ($event.target as HTMLDetailsElement).open"
+    >
+      <summary>
+        {{ t("plan.tools") }}
+        <Icon name="expand" class="chev" />
+      </summary>
       <input
         class="plan-name"
         :value="name"
@@ -155,7 +164,6 @@ async function onImport(e: Event) {
           emit('rename', ($event.target as HTMLInputElement).value.trim())
         "
       />
-    </header>
 
     <div class="palette">
       <button
@@ -165,6 +173,7 @@ async function onImport(e: Event) {
         :class="{ active: placing === type }"
         draggable="true"
         :aria-pressed="placing === type"
+        :aria-label="typeName(type)"
         :title="`${typeName(type)} · ${SENSOR_TYPES[type].range} m`"
         @dragstart="onDragStart($event, type)"
         @click="emit('pick', placing === type ? null : type)"
@@ -172,13 +181,13 @@ async function onImport(e: Event) {
         <span class="sq" :style="{ background: SENSOR_TYPES[type].color }">
           <Icon :name="SENSOR_TYPES[type].icon" />
         </span>
-        {{ typeName(type) }}
       </button>
     </div>
     <p class="hint">{{ t("plan.hint") }}</p>
+    </details>
 
     <details
-      class="overlap"
+      class="group overlap"
       :open="displayOpen"
       @toggle="displayOpen = ($event.target as HTMLDetailsElement).open"
     >
@@ -377,9 +386,6 @@ async function onImport(e: Event) {
 </template>
 
 <style scoped>
-.head {
-  padding: 0 16px 8px;
-}
 .plan-name {
   display: block;
   width: 100%;
@@ -396,26 +402,23 @@ async function onImport(e: Event) {
   outline-offset: -1px;
 }
 .palette {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  display: flex;
   gap: 8px;
-  padding: 0 12px;
+  margin-top: 4px;
 }
 .tool {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 4px 8px;
+  padding: 6px;
   border-radius: var(--radius);
   background: var(--hover);
-  font-size: 12px;
-  font-weight: 600;
-  text-align: center;
   cursor: grab;
 }
+.tool {
+  transition: transform 0.1s, box-shadow 0.1s;
+}
 .tool:hover {
-  box-shadow: inset 0 0 0 1px var(--line);
+  box-shadow: inset 0 0 0 2px var(--accent);
+  transform: translateY(-1px);
 }
 .tool.active {
   background: var(--accent-soft);
@@ -426,28 +429,29 @@ async function onImport(e: Event) {
   flex: none;
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
   color: #fff;
-  font-size: 19px;
+  font-size: 17px;
 }
 .hint {
-  margin: 8px 16px 10px;
+  margin: 0;
   font-size: 12px;
   color: var(--muted);
 }
-.overlap {
+/* Collapsible sections inside the panel */
+.group {
   padding: 10px 16px;
   border-top: 1px solid var(--line);
   font-size: 13px;
 }
-.overlap[open] {
+.group[open] {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.overlap summary {
+.group summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -456,14 +460,14 @@ async function onImport(e: Event) {
   color: var(--muted);
   cursor: pointer;
 }
-.overlap summary::-webkit-details-marker {
+.group summary::-webkit-details-marker {
   display: none;
 }
 .chev {
   font-size: 18px;
   transition: transform 0.15s;
 }
-.overlap[open] .chev {
+.group[open] .chev {
   transform: rotate(180deg);
 }
 .check {
