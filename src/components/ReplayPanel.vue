@@ -12,7 +12,6 @@ defineProps<{
   position: number; // ms
   duration: number; // ms
   error: string | null;
-  history: boolean; // flight logs on the Pi can be listed (live feed)
 }>();
 const emit = defineEmits<{
   load: [file: File];
@@ -20,7 +19,6 @@ const emit = defineEmits<{
   seek: [ms: number];
   speed: [value: number];
   close: [];
-  history: [];
 }>();
 
 const input = ref<HTMLInputElement>();
@@ -34,7 +32,7 @@ function onFile(e: Event) {
 </script>
 
 <template>
-  <section class="replay" :class="{ loaded: fileName }">
+  <section v-if="fileName || error" class="replay" :class="{ loaded: fileName }">
     <input
       ref="input"
       type="file"
@@ -43,18 +41,7 @@ function onFile(e: Event) {
       @change="onFile"
     />
 
-    <template v-if="!fileName">
-      <button class="open" :title="t('replay.open')" @click="input?.click()">
-        <Icon name="upload" />
-        {{ t("replay.import") }}
-      </button>
-      <button v-if="history" class="open" @click="emit('history')">
-        <Icon name="clock" />
-        {{ t("history.open") }}
-      </button>
-    </template>
-
-    <template v-else>
+    <template v-if="fileName">
       <div class="head">
         <span class="name" :title="fileName">{{ fileName }}</span>
         <span class="count">{{ plural("replay.drones", droneCount) }}</span>
@@ -146,21 +133,6 @@ function onFile(e: Event) {
 }
 .replay:not(.loaded) {
   display: flex;
-}
-.open {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 14px 6px 10px;
-  border-radius: 999px;
-  font-weight: 600;
-  color: var(--accent);
-}
-.open .icon {
-  font-size: 18px;
-}
-.open:hover {
-  background: var(--accent-soft);
 }
 .head {
   display: flex;

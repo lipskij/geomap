@@ -7,6 +7,7 @@ import { useSensors, type SensorType } from "./composables/useSensors";
 import DroneList from "./components/DroneList.vue";
 import ToastStack from "./components/ToastStack.vue";
 import ReplayPanel from "./components/ReplayPanel.vue";
+import MainMenu from "./components/MainMenu.vue";
 import HistoryPanel from "./components/HistoryPanel.vue";
 import DetectionPanel from "./components/DetectionPanel.vue";
 import {
@@ -36,6 +37,7 @@ import { t } from "./i18n";
 const { detections: live, error } = useDetections();
 const replay = useReplay();
 const showHistory = ref(false);
+const showLayers = ref(false);
 
 // While a replay is loaded, show only the replayed drones; otherwise live (or mock) ones
 const detections = computed(() =>
@@ -271,29 +273,14 @@ function onExport(id: string, format: ExportFormat) {
     @move-sensor="plan.move"
     @select-sensor="(id) => (selectedSensor = id)"
   />
-  <!-- Data source: built-in mock data or the backend live feed (dot = connection) -->
-  <div class="source">
-    <button
-      v-for="s in ['mock', 'live'] as const"
-      :key="s"
-      :aria-pressed="source === s"
-      :title="s === 'live' ? t(`live.${liveStatus}`) : undefined"
-      @click="source = s"
-    >
-      <i v-if="s === 'live' && source === 'live'" class="dot" :class="liveStatus" />{{ t(`source.${s}`) }}
-    </button>
-  </div>
-  <div class="mode" role="tablist">
-    <button
-      v-for="m in ['monitor', 'planner', 'detection'] as const"
-      :key="m"
-      role="tab"
-      :aria-selected="mode === m"
-      @click="mode = m"
-    >
-      {{ t(`mode.${m}`) }}
-    </button>
-  </div>
+  <MainMenu
+    :mode="mode"
+    :history="source === 'live'"
+    @mode="(m) => (mode = m)"
+    @load="replay.load"
+    @history="showHistory = !showHistory"
+    @layers="showLayers = true"
+  />
   <PlannerPanel
     v-if="mode === 'planner'"
     :name="plan.name.value"
@@ -328,6 +315,7 @@ function onExport(id: string, format: ExportFormat) {
     @select="(s) => ((selectedSensor = s.id), mapView?.panTo(s.lat, s.lng))"
   />
   <LayersPanel
+    v-model:open="showLayers"
     v-model:base="base"
     v-model:show-zones="showZones"
     v-model:show-sensors="showSensorLayer"
@@ -363,8 +351,6 @@ function onExport(id: string, format: ExportFormat) {
     :position="replay.position.value"
     :duration="replay.duration.value"
     :error="replay.error.value"
-    :history="source === 'live'"
-    @history="showHistory = !showHistory"
     @load="replay.load"
     @toggle="replay.toggle"
     @seek="replay.seek"
@@ -505,14 +491,17 @@ button {
     background: var(--panel);
   }
 }
-/* Phones: no room beside the tab and data switches; full width below them, half the
-   screen at most so the map stays visible */
+/* Phones: full width at the top, half the screen at most so the map stays visible. The
+   menu button sits in the panel's title row, so a collapsed panel shares its line */
 @media (max-width: 760px) {
   .side-panel {
-    top: 108px;
     left: 10px;
     width: auto;
     max-height: 50dvh;
+  }
+  .side-panel > .panel-header:first-child {
+    min-height: 44px;
+    padding-left: 62px;
   }
 }
 .panel-title {
@@ -552,70 +541,6 @@ button {
   transform: scaleY(1);
 }
 
-/* Monitor / Planner switch, top-left; notifications stack below it */
-.mode {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 1000;
-  display: flex;
-  padding: 4px;
-  border-radius: 999px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
-}
-.mode button {
-  padding: 7px 16px;
-  border: 0;
-  border-radius: 999px;
-  background: none;
-  font: 600 14px var(--font);
-  color: var(--muted);
-  cursor: pointer;
-}
-.source {
-  position: absolute;
-  top: 66px;
-  left: 10px;
-  z-index: 1000;
-  display: flex;
-  padding: 3px;
-  border-radius: 999px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
-}
-.source button {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border-radius: 999px;
-  font: 600 12px var(--font);
-  color: var(--muted);
-}
-.source button[aria-pressed="true"] {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--warn); /* connecting / retrying */
-}
-.dot.open {
-  background: var(--ok);
-}
-.dot.badKey,
-.dot.noKey,
-.dot.refused {
-  background: var(--danger);
-}
-.mode button[aria-selected="true"] {
-  background: var(--accent);
-  color: var(--on-accent);
-}
-
 /* Base maps: OSM tiles recoloured, so no tile key is needed */
 .light-tiles {
   filter: grayscale(1) brightness(1.04) contrast(0.82);
@@ -636,7 +561,7 @@ button {
   box-shadow: var(--shadow) !important;
 }
 .leaflet-control-zoom {
-  margin-bottom: 86px !important; /* sits above the layers button */
+  margin-bottom: 28px !important;
   margin-right: 16px !important;
 }
 .leaflet-bar a {

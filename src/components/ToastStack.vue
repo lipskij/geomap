@@ -39,10 +39,10 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
-/* Top-left, below the Monitor / Planner switch */
+/* Top-left, below the menu (tabs, then data source and actions) */
 .stack {
   position: absolute;
-  top: 64px;
+  top: 108px;
   left: 10px;
   z-index: 1000;
   display: flex;
@@ -52,11 +52,11 @@ const emit = defineEmits<{
   max-width: calc(100vw - 20px);
   pointer-events: none;
 }
-/* Phones: the drone panel takes the top; stack above the Import button instead */
+/* Phones: the drone panel takes the top; stack at the bottom instead */
 @media (max-width: 760px) {
   .stack {
     top: auto;
-    bottom: 84px;
+    bottom: 28px;
   }
 }
 .toast {

@@ -113,7 +113,7 @@ const length = (e: HistoryEntry) => fmtDuration(Date.parse(e.end) - Date.parse(e
 <style scoped>
 .history {
   position: absolute;
-  top: 64px;
+  top: 10px;
   right: 340px;
   z-index: 1000;
   display: flex;

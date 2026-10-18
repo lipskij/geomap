@@ -1,17 +1,15 @@
 <script setup lang="ts">
-import { ref } from "vue";
 import Icon from "./Icon.vue";
 import type { BaseLayer } from "./MapView.vue";
 import { LANGS, lang, t, type MsgKey } from "../i18n";
 
 defineProps<{ base: BaseLayer; showZones: boolean; zonesAvailable: boolean; showSensors: boolean }>();
+const open = defineModel<boolean>("open", { required: true }); // from the menu
 const emit = defineEmits<{
   "update:base": [value: BaseLayer];
   "update:showZones": [value: boolean];
   "update:showSensors": [value: boolean];
 }>();
-
-const open = ref(false);
 
 // One central Vilnius tile as the preview; light/dark reuse the map's CSS recolouring
 const OSM_TILE = "https://tile.openstreetmap.org/13/4671/2603.png";
@@ -28,16 +26,7 @@ const desc = (key: BaseLayer) => `layer.${key}.desc` as MsgKey;
 </script>
 
 <template>
-  <button
-    v-if="!open"
-    class="fab"
-    :title="t('layer.title')"
-    @click="open = true"
-  >
-    <Icon name="layers" />
-  </button>
-
-  <section v-else class="sheet">
+  <section v-if="open" class="sheet">
     <button class="close" :title="t('layer.close')" @click="open = false">
       <Icon name="close" />
     </button>
@@ -107,24 +96,6 @@ const desc = (key: BaseLayer) => `layer.${key}.desc` as MsgKey;
 </template>
 
 <style scoped>
-.fab {
-  position: absolute;
-  right: 12px;
-  bottom: 28px;
-  z-index: 1000;
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: var(--panel);
-  color: var(--muted);
-  box-shadow: var(--shadow);
-  font-size: 22px;
-}
-.fab:hover {
-  color: var(--accent);
-}
 .sheet {
   position: absolute;
   /* Centred in the map area left of the drone panel (320 px + 2 × 10 px) */

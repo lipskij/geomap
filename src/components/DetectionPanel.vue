@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { stored } from "../stored";
 import { computed, reactive, ref, watch } from "vue";
 import SnapshotViewer from "./SnapshotViewer.vue";
 import { newest, snapshots, type Snapshot } from "../live";
@@ -15,6 +16,7 @@ const props = defineProps<{
   selected: number | null;
 }>();
 const emit = defineEmits<{ select: [s: Sensor] }>();
+const open = stored("geomap.open.detection", true);
 
 // Recomputed every poll: track and hearing are replaced each tick
 const ready = computed(() => (props.track ? assess(props.track, Date.now()) : null));
@@ -80,9 +82,10 @@ const checks = computed(() => {
 
 <template>
   <section class="side-panel">
-    <header class="head">
+    <button class="panel-header" :aria-expanded="open" @click="open = !open">
       <span class="panel-title"><Icon name="sensors" />{{ t("det.title") }}</span>
-    </header>
+    </button>
+    <template v-if="open">
 
     <div
       class="verdict"
@@ -141,13 +144,11 @@ const checks = computed(() => {
       </li>
     </ul>
     <SnapshotViewer :snapshot="viewing" @close="viewingTrack = null" />
+    </template>
   </section>
 </template>
 
 <style scoped>
-.head {
-  padding: 12px 16px 8px;
-}
 .verdict {
   margin: 4px 16px 10px;
   padding: 12px 14px;
