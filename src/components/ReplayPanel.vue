@@ -12,6 +12,7 @@ defineProps<{
   position: number; // ms
   duration: number; // ms
   error: string | null;
+  history: boolean; // flight logs on the Pi can be listed (live feed)
 }>();
 const emit = defineEmits<{
   load: [file: File];
@@ -19,6 +20,7 @@ const emit = defineEmits<{
   seek: [ms: number];
   speed: [value: number];
   close: [];
+  history: [];
 }>();
 
 const input = ref<HTMLInputElement>();
@@ -49,6 +51,10 @@ function onFile(e: Event) {
     >
       <Icon name="upload" />
       {{ t("replay.import") }}
+    </button>
+    <button v-if="!fileName && history" class="open" @click="emit('history')">
+      <Icon name="clock" />
+      {{ t("history.open") }}
     </button>
 
     <template v-else>
@@ -140,6 +146,9 @@ function onFile(e: Event) {
     bottom: 24px;
     max-width: calc(100vw - 20px);
   }
+}
+.replay:not(.loaded) {
+  display: flex;
 }
 .open {
   display: flex;

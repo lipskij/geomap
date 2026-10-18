@@ -9,14 +9,21 @@ Cloudflare Access the login cookie reaches the socket. A client gets in with ?to
 (local dev over the SSH tunnel) or a valid Cloudflare Access login (RID_ACCESS_TEAM +
 RID_ACCESS_AUD set).
 
+Every packet is also appended to a CSV per flight in RID_LOG (default ./log), kept
+RID_KEEP_DAYS (default 30). GET /v1/history lists them, GET /v1/history/<id>.csv
+returns one (same columns as samples/wifi-remoteid-log-*.csv, so geomap can replay it),
+and a {"type": "history.delete", "ids": [...]} message on the socket deletes them.
+
 Run:  RID_TOKEN=... python3 rid_server.py            (reads RID_SERIAL)
       RID_TOKEN=... python3 rid_server.py - < lines   (reads stdin)
 """
 
 import asyncio
+import csv
 import json
 import mimetypes
 import os
+import re
 import sys
 import threading
 import time
@@ -24,6 +31,7 @@ from datetime import datetime, timezone
 
 from websockets.asyncio.server import broadcast, serve
 from websockets.datastructures import Headers
+from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Response
 
 TOKEN = os.environ["RID_TOKEN"]  # required: no token, no server
@@ -32,6 +40,12 @@ PORT = int(os.environ.get("RID_PORT", "8765"))
 WEB = os.path.realpath(os.environ.get("RID_WEB", "web"))
 ACCESS_TEAM = os.environ.get("RID_ACCESS_TEAM")  # e.g. curly-breeze-e28d.cloudflareaccess.com
 ACCESS_AUD = os.environ.get("RID_ACCESS_AUD")  # the Access application's AUD tag
+ORIGIN = os.environ.get("RID_ORIGIN")  # e.g. https://owlsystem.gungi.chat: the only site whose sockets a login opens
+LOG = os.path.realpath(os.environ.get("RID_LOG", "log"))
+KEEP_S = float(os.environ.get("RID_KEEP_DAYS", "30")) * 86400
+COLS = ["timestamp", "mac", "rssi", "drone_lat", "drone_long", "drone_altitude",
+        "pilot_lat", "pilot_long", "basic_id"]
+LOG_ID = re.compile(r"[A-Za-z0-9_-]{1,120}")  # log file names; anything else is refused
 # ponytail: node position from env; send it from the ESP32 or a GPS once nodes move
 NODE = {
     "node_id": os.environ.get("RID_NODE_ID", "pi-01"),
@@ -68,8 +82,12 @@ class Tracks:
     def snapshot(self):
         return [t["pub"] for t in self.by_uas.values()]
 
+    @staticmethod
+    def key(p):
+        return (p.get("basic_id") or "").strip() or p.get("mac")
+
     def packet(self, p, now):
-        uas = (p.get("basic_id") or "").strip() or p.get("mac")
+        uas = self.key(p)
         if not uas:
             return []
         t = self.by_uas.get(uas)
@@ -117,6 +135,63 @@ class Tracks:
         return {"type": kind, "data": t["pub"]}
 
 
+def log_packet(track_id, p, now):
+    """Append a packet to its flight's CSV. The id comes from radio data: unsafe characters become _."""
+    f = os.path.join(LOG, re.sub(r"[^A-Za-z0-9_-]", "_", track_id)[:120] + ".csv")
+    try:
+        os.makedirs(LOG, exist_ok=True)
+        new = not os.path.exists(f)
+        with open(f, "a", newline="") as fh:
+            w = csv.writer(fh)
+            if new:
+                w.writerow(COLS)
+            w.writerow([iso(now)] + [p.get(c, "") for c in COLS[1:]])
+    except OSError as e:  # SD card full or read-only: keep serving live data
+        print(f"log: {e}", flush=True)
+
+
+def log_file(log_id):
+    """Path of a flight log by id, or None (unknown, or not a plain log name)."""
+    if not (isinstance(log_id, str) and LOG_ID.fullmatch(log_id)):
+        return None
+    f = os.path.join(LOG, log_id + ".csv")
+    return f if os.path.isfile(f) else None
+
+
+def history():
+    """Flight logs, newest first. ponytail: reads every file per call; an index if it gets slow."""
+    out = []
+    for name in os.listdir(LOG) if os.path.isdir(LOG) else []:
+        if not (name.endswith(".csv") and log_file(name[:-4])):
+            continue
+        with open(os.path.join(LOG, name), newline="") as fh:
+            rows = list(csv.DictReader(fh))
+        if rows:
+            out.append({"id": name[:-4], "uas_id": rows[0]["basic_id"] or rows[0]["mac"],
+                        "start": rows[0]["timestamp"], "end": rows[-1]["timestamp"],
+                        "points": len(rows)})
+    return sorted(out, key=lambda h: h["start"], reverse=True)
+
+
+def delete_history(ids):
+    """Delete flight logs from the SD card; returns the ids actually deleted."""
+    done = []
+    for i in ids:
+        if f := log_file(i):
+            os.remove(f)
+            done.append(i)
+    return done
+
+
+def prune(now):
+    """Delete flight logs not written to for KEEP_S."""
+    for name in os.listdir(LOG) if os.path.isdir(LOG) else []:
+        f = os.path.join(LOG, name)
+        if name.endswith(".csv") and os.path.getmtime(f) < now - KEEP_S:
+            os.remove(f)
+            print(f"log: pruned {name}", flush=True)
+
+
 _jwks = None
 
 
@@ -138,15 +213,18 @@ def access_ok(assertion):
         return False
 
 
+def respond(body, kind):
+    return Response(200, "OK", Headers({"Content-Type": kind, "Content-Length": str(len(body)),
+                                        "Cache-Control": "no-store"}), body)
+
+
 def static(path):
     """A file of the built geomap, or None. Paths outside WEB are refused."""
     f = os.path.realpath(os.path.join(WEB, path.lstrip("/") or "index.html"))
     if not f.startswith(WEB + os.sep) or not os.path.isfile(f):
         return None
     with open(f, "rb") as fh:
-        body = fh.read()
-    kind = mimetypes.guess_type(f)[0] or "application/octet-stream"
-    return Response(200, "OK", Headers({"Content-Type": kind, "Content-Length": str(len(body))}), body)
+        return respond(fh.read(), mimetypes.guess_type(f)[0] or "application/octet-stream")
 
 
 def read_lines(src, loop, queue):
@@ -187,26 +265,51 @@ async def main(src):
         from urllib.parse import parse_qs, urlsplit
 
         url = urlsplit(request.path)
-        if url.path != "/v1/live":
+        if not url.path.startswith("/v1/"):
             return static(url.path) or conn.respond(404, "not found\n")
-        if compare_digest(parse_qs(url.query).get("token", [""])[0].encode(), TOKEN.encode()):
+        if not compare_digest(parse_qs(url.query).get("token", [""])[0].encode(), TOKEN.encode()):
+            if not await asyncio.to_thread(access_ok, request.headers.get("Cf-Access-Jwt-Assertion")):
+                return conn.respond(403, "bad token\n")
+            # Login cookie: refuse sockets other sites open with it (they could delete logs)
+            if url.path == "/v1/live" and (not ORIGIN or request.headers.get("Origin") != ORIGIN):
+                return conn.respond(403, "bad origin\n")
+        if url.path == "/v1/live":
             return None
-        if await asyncio.to_thread(access_ok, request.headers.get("Cf-Access-Jwt-Assertion")):
-            return None
-        return conn.respond(403, "bad token\n")
+        if url.path == "/v1/history":
+            return respond(json.dumps(history()).encode(), "application/json")
+        m = re.fullmatch(r"/v1/history/(.+)\.csv", url.path)
+        if m and (f := log_file(m[1])):
+            with open(f, "rb") as fh:
+                return respond(fh.read(), "text/csv")
+        return conn.respond(404, "not found\n")
 
     async def handler(conn):
         await conn.send(json.dumps({"type": "snapshot", "tracks": tracks.snapshot(), "nodes": NODES}))
         clients.add(conn)
         try:
-            await conn.wait_closed()
+            async for msg in conn:
+                try:
+                    m = json.loads(msg)
+                except ValueError:
+                    continue
+                if isinstance(m, dict) and m.get("type") == "history.delete" and isinstance(m.get("ids"), list):
+                    ids = delete_history(m["ids"])
+                    print(f"history deleted: {ids}", flush=True)
+                    await conn.send(json.dumps({"type": "history.deleted", "data": {"ids": ids}}))
+        except ConnectionClosed:
+            pass
         finally:
             clients.discard(conn)
 
     async def ticker():
+        pruned = 0
         while True:
             await asyncio.sleep(1)
-            send(tracks.tick(time.time()))
+            now = time.time()
+            send(tracks.tick(now))
+            if now - pruned >= 3600:
+                pruned = now
+                prune(now)
 
     threading.Thread(target=read_lines, args=(src, asyncio.get_running_loop(), queue), daemon=True).start()
     async with serve(handler, "0.0.0.0", PORT, process_request=auth):
@@ -219,7 +322,10 @@ async def main(src):
             except ValueError:
                 continue  # boot logs and other non-JSON chatter
             if isinstance(p, dict):
-                send(tracks.packet(p, time.time()))
+                now = time.time()
+                send(tracks.packet(p, now))
+                if t := tracks.by_uas.get(Tracks.key(p)):
+                    log_packet(t["pub"]["track_id"], p, now)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import { shallowRef } from "vue";
 import type { Bearing } from "./acoustic";
 import type { Sensor } from "./composables/useSensors";
 import type { Detections } from "./types";
+import { t } from "./i18n";
 
 // Backend live feed over a WebSocket: a snapshot on connect, then each message replaces
 // one whole track (by track_id) or updates one node. Reconnects after any drop; the new
@@ -124,6 +125,10 @@ function handle(m: { type: string; data?: any; tracks?: LiveTrack[]; nodes?: Liv
     case "contact.alert": // also arrives as track.created, so tracks need nothing here
       for (const fn of alertHandlers) fn(m.data);
       break;
+    case "history.deleted":
+      pendingDelete?.resolve(m.data.ids);
+      pendingDelete = undefined;
+      break;
     case "node.status":
       nodes.set(m.data.node_id, { ...nodes.get(m.data.node_id), ...m.data });
       publishNodes();
@@ -150,6 +155,8 @@ function connect() {
     }
   };
   sock.onclose = (e) => {
+    pendingDelete?.reject(new Error(t("history.notConnected")));
+    pendingDelete = undefined;
     if (ws !== sock) return; // switched off or replaced
     if (e.code === 1008) return void (liveStatus.value = "badKey"); // retrying won't help
     // A wrong key is refused at the handshake (HTTP 403), which a browser only sees as
@@ -225,6 +232,39 @@ export function liveBearings(): Bearing[] {
     });
   }
   return out;
+}
+
+// Flight logs kept on the Pi for 30 days (server/rid_server.py). Same origin as the app
+// when the Pi serves it; the dev server proxies /v1/history otherwise (vite.config.ts)
+export interface HistoryEntry {
+  id: string;
+  uas_id: string;
+  start: string; // ISO time
+  end: string;
+  points: number;
+}
+
+export async function fetchHistory(): Promise<HistoryEntry[]> {
+  const r = await fetch("/v1/history");
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+// One flight log as a file for replay
+export async function historyFile(id: string): Promise<File> {
+  const r = await fetch(`/v1/history/${encodeURIComponent(id)}.csv`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return new File([await r.text()], `${id}.csv`, { type: "text/csv" });
+}
+
+// Deletes flight logs on the Pi over the live socket; resolves with the ids it deleted
+let pendingDelete: { resolve: (ids: string[]) => void; reject: (e: Error) => void } | undefined;
+export function deleteHistory(ids: string[]): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    if (ws?.readyState !== WebSocket.OPEN) return reject(new Error(t("history.notConnected")));
+    pendingDelete = { resolve, reject };
+    ws.send(JSON.stringify({ type: "history.delete", ids }));
+  });
 }
 
 export interface Snapshot {

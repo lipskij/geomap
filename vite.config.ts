@@ -18,6 +18,14 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/ans-api/, "/avm"),
         },
+        // Dev only: flight logs from the live server (the Pi serves them same-origin in
+        // production), with the key added here
+        ...(env.VITE_LIVE_URL && {
+          "/v1/history": {
+            target: env.VITE_LIVE_URL.replace(/^ws/, "http").replace(/\/v1\/live$/, ""),
+            rewrite: (path: string) => `${path}?token=${encodeURIComponent(env.VITE_LIVE_TOKEN ?? "")}`,
+          },
+        }),
         // Dev only: forwards /oracle/* to the concentrator REST API with the key added here.
         // Works around its missing CORS and its media ?token= returning 401; production
         // needs those fixed on the backend (or a backend of our own) instead

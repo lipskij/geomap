@@ -7,6 +7,7 @@ import { useSensors, type SensorType } from "./composables/useSensors";
 import DroneList from "./components/DroneList.vue";
 import ToastStack from "./components/ToastStack.vue";
 import ReplayPanel from "./components/ReplayPanel.vue";
+import HistoryPanel from "./components/HistoryPanel.vue";
 import DetectionPanel from "./components/DetectionPanel.vue";
 import {
   REPLAY_PREFIX,
@@ -34,6 +35,7 @@ import { t } from "./i18n";
 
 const { detections: live, error } = useDetections();
 const replay = useReplay();
+const showHistory = ref(false);
 
 // While a replay is loaded, show only the replayed drones; otherwise live (or mock) ones
 const detections = computed(() =>
@@ -361,11 +363,18 @@ function onExport(id: string, format: ExportFormat) {
     :position="replay.position.value"
     :duration="replay.duration.value"
     :error="replay.error.value"
+    :history="source === 'live'"
+    @history="showHistory = !showHistory"
     @load="replay.load"
     @toggle="replay.toggle"
     @seek="replay.seek"
     @speed="(v) => (replay.speed.value = v)"
     @close="replay.close"
+  />
+  <HistoryPanel
+    v-if="showHistory && source === 'live' && !replay.fileName.value"
+    @replay="(f) => ((showHistory = false), replay.load(f))"
+    @close="showHistory = false"
   />
 </template>
 

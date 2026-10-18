@@ -198,6 +198,17 @@ const en = {
   "replay.err.xml": "Invalid XML",
   "replay.err.type": "Unsupported file type (use CSV, GPX or KML)",
   "replay.err.empty": "No track with at least 2 positions found",
+  // Flight history on the Pi
+  "history.open": "History",
+  "history.title": "Flight history (30 days)",
+  "history.empty": "No flights logged yet",
+  "history.loading": "Loading…",
+  "history.replay": "Replay",
+  "history.selectAll": "Select all",
+  "history.delete": "Delete ({n})",
+  "history.confirmDelete":
+    "Permanently delete the selected flight logs ({n}) from the Pi? This cannot be undone.",
+  "history.notConnected": "Live feed not connected",
   // Misc
   "toast.dismiss": "Dismiss",
   "err.detections": "Failed to load detections: {e}",
@@ -362,6 +373,17 @@ const lt: Record<MsgKey, string> & Record<string, string> = {
   "replay.err.xml": "Neteisingas XML",
   "replay.err.type": "Nepalaikomas failo tipas (naudokite CSV, GPX arba KML)",
   "replay.err.empty": "Nerasta trajektorijos su bent 2 taškais",
+  // Skrydžių istorija Pi
+  "history.open": "Istorija",
+  "history.title": "Skrydžių istorija (30 d.)",
+  "history.empty": "Skrydžių dar neužfiksuota",
+  "history.loading": "Įkeliama…",
+  "history.replay": "Atkurti",
+  "history.selectAll": "Pažymėti visus",
+  "history.delete": "Ištrinti ({n})",
+  "history.confirmDelete":
+    "Visam laikui ištrinti pažymėtus skrydžių įrašus ({n}) iš Pi? Šio veiksmo atšaukti negalima.",
+  "history.notConnected": "Tiesioginis srautas neprijungtas",
   "toast.dismiss": "Uždaryti",
   "err.detections": "Nepavyko įkelti aptikimų: {e}",
   "err.zones": "Nepavyko įkelti dronų zonų: {e}",

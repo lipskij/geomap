@@ -1,7 +1,9 @@
 import os
+import tempfile
 
 os.environ.setdefault("RID_TOKEN", "test")
-from rid_server import Tracks
+os.environ["RID_LOG"] = tempfile.mkdtemp()
+from rid_server import LOG, Tracks, delete_history, history, log_file, log_packet, prune
 
 p = {"basic_id": "D1", "mac": "aa", "rssi": -70, "drone_lat": 54.7, "drone_long": 25.29,
      "drone_altitude": 50, "pilot_lat": 54.7, "pilot_long": 25.29}
@@ -25,4 +27,19 @@ assert [m["type"] for m in t.tick(236)] == ["track.closed"]
 assert m["data"]["uas_id"] == "bb"
 [m] = t.packet(p, 301)
 assert m["type"] == "track.created" and m["data"]["track_id"] != first_id
+# Flight logs: one CSV per track, listed newest first, unsafe ids never touch the disk
+log_packet("D1-100", p, 100)
+log_packet("D1-100", {**p, "drone_lat": 54.71}, 101)
+log_packet("aa:bb/../x-300", {**p, "basic_id": "", "mac": "aa:bb"}, 300)
+h = history()
+assert [e["id"] for e in h] == ["aa_bb____x-300", "D1-100"], h
+assert h[1] == {"id": "D1-100", "uas_id": "D1", "start": h[1]["start"], "end": h[1]["end"], "points": 2}
+assert h[0]["uas_id"] == "aa:bb"
+assert open(log_file("D1-100")).readline().startswith("timestamp,mac,rssi,drone_lat,drone_long")
+assert log_file("../D1-100") is None and log_file(None) is None
+assert delete_history(["../../etc/passwd", "nope", "D1-100"]) == ["D1-100"]
+assert [e["id"] for e in history()] == ["aa_bb____x-300"]
+os.utime(log_file("aa_bb____x-300"), (0, 0))  # last written in 1970
+prune(31 * 86400)
+assert history() == [] and os.listdir(LOG) == []
 print("ok")
