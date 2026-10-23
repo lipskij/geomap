@@ -155,6 +155,7 @@ const checks = computed(() => {
         </button>
         <button v-if="s.camera" class="cam" :title="t('det.liveCamera')" :aria-label="t('det.liveCamera')" @click.stop="openCam(s)">
           <Icon name="videocam" />
+          <span>{{ t("det.watch") }}</span>
         </button>
         <span class="state">
           <template v-if="s.offline">{{ t("det.offline") }}</template>
@@ -165,7 +166,7 @@ const checks = computed(() => {
       </li>
     </ul>
     <SnapshotViewer :snapshot="viewing" @close="viewingTrack = null" />
-    <SnapshotViewer :snapshot="live" @close="closeCam" />
+    <SnapshotViewer :snapshot="live" floating @close="closeCam" />
     </template>
   </section>
 </template>
@@ -281,8 +282,22 @@ code {
   line-height: 0;
 }
 .cam {
-  padding: 2px 4px;
-  line-height: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px 5px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.cam:hover,
+.cam:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  transform: translateY(-1px);
+  outline: none;
 }
 .snap img {
   width: 40px;
