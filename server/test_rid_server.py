@@ -3,7 +3,7 @@ import tempfile
 
 os.environ.setdefault("RID_TOKEN", "test")
 os.environ["RID_LOG"] = tempfile.mkdtemp()
-from rid_server import LOG, Tracks, delete_history, history, log_file, log_packet, prune
+from rid_server import LOG, Tracks, delete_history, history, jpegs, log_file, log_packet, prune
 
 p = {"basic_id": "D1", "mac": "aa", "rssi": -70, "drone_lat": 54.7, "drone_long": 25.29,
      "drone_altitude": 50, "pilot_lat": 54.7, "pilot_long": 25.29}
@@ -42,4 +42,8 @@ assert [e["id"] for e in history()] == ["aa_bb____x-300"]
 os.utime(log_file("aa_bb____x-300"), (0, 0))  # last written in 1970
 prune(31 * 86400)
 assert history() == [] and os.listdir(LOG) == []
+# Camera: MJPEG stream split into whole JPEGs; a frame cut mid-read waits for the rest
+a, b = b"\xff\xd8\x01\xff\x00\xff\xd9", b"\xff\xd8\x02\xff\xd9"
+assert jpegs(a + b + b"\xff\xd8\x03") == ([a, b], b"\xff\xd8\x03")
+assert jpegs(b"\xff\xd8\x03") == ([], b"\xff\xd8\x03")
 print("ok")

@@ -14,6 +14,11 @@ RID_KEEP_DAYS (default 30). GET /v1/history lists them, GET /v1/history/<id>.csv
 returns one (same columns as samples/wifi-remoteid-log-*.csv, so geomap can replay it),
 and a {"type": "history.delete", "ids": [...]} message on the socket deletes them.
 
+With a Pi camera attached, /v1/camera streams it as one JPEG per binary message, same
+login as /v1/live. rpicam-vid runs only while someone watches; each viewer answers every
+frame with any message and gets at most CAM_IN_FLIGHT unanswered, so a slow link drops
+frames instead of falling behind.
+
 Run:  RID_TOKEN=... python3 rid_server.py            (reads RID_SERIAL)
       RID_TOKEN=... python3 rid_server.py - < lines   (reads stdin)
 """
@@ -24,6 +29,7 @@ import json
 import mimetypes
 import os
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -58,6 +64,10 @@ NODES = [NODE] if NODE["lat"] or NODE["lon"] else []  # no position set: don't p
 LOST_S = 15  # no packets this long: greyed out in the UI
 CLOSE_S = 120  # no packets this long: removed; heard again = new track_id
 UPDATE_S = 1  # at most one track.updated per track per second
+# ponytail: fixed size and rate; the frame acks cut the rate to what the link carries
+CAM_CMD = ["rpicam-vid", "-t", "0", "-n", "--codec", "mjpeg", "--width", "1280", "--height", "720",
+           "--framerate", "15", "-q", "50", "--flush", "-o", "-"]
+CAM_IN_FLIGHT = 2  # frames sent but not yet answered, per viewer
 
 
 def iso(t):
@@ -133,6 +143,25 @@ class Tracks:
     def _send(self, t, now, kind):
         t["sent"], t["dirty"] = now, False
         return {"type": kind, "data": t["pub"]}
+
+
+def camera_present():
+    try:
+        out = subprocess.run(["rpicam-hello", "--list-cameras"], capture_output=True, text=True,
+                             timeout=10).stdout
+    except (OSError, subprocess.TimeoutExpired):  # not a Pi, or no camera tools
+        return False
+    return re.search(r"^\s*0 : ", out, re.M) is not None
+
+
+def jpegs(buf):
+    """Split an MJPEG byte stream into whole JPEGs; returns (frames, leftover bytes).
+    FF D9 only appears as the end marker: inside the image data FF is always followed by 00."""
+    frames = []
+    while (end := buf.find(b"\xff\xd9")) >= 0:
+        frames.append(buf[:end + 2])
+        buf = buf[end + 2:]
+    return frames, buf
 
 
 def log_packet(track_id, p, now):
@@ -252,6 +281,32 @@ async def main(src):
     tracks = Tracks(NODE["node_id"])
     clients = set()
     queue = asyncio.Queue()
+    NODE["camera"] = await asyncio.to_thread(camera_present)
+    print(f"camera: {'found' if NODE['camera'] else 'none'}", flush=True)
+    viewers = {}  # camera socket -> frames sent but not answered
+    cam_task = None
+
+    async def camera():
+        """Run rpicam-vid while anyone watches; each read sends only the newest whole frame."""
+        while viewers:
+            proc = await asyncio.create_subprocess_exec(*CAM_CMD, stdout=subprocess.PIPE,
+                                                        stderr=subprocess.DEVNULL)
+            buf = b""
+            try:
+                while viewers and (chunk := await proc.stdout.read(1 << 16)):
+                    frames, buf = jpegs(buf + chunk)
+                    if frames:
+                        for c, n in list(viewers.items()):
+                            if n < CAM_IN_FLIGHT:
+                                viewers[c] = n + 1
+                                broadcast([c], frames[-1])
+            finally:
+                if proc.returncode is None:
+                    proc.kill()
+                await proc.wait()
+            if viewers:  # rpicam-vid quit by itself (camera busy or unplugged)
+                print(f"camera: rpicam-vid exited {proc.returncode}; retrying in 3 s", flush=True)
+                await asyncio.sleep(3)
 
     def send(msgs):
         for m in msgs:
@@ -270,10 +325,10 @@ async def main(src):
         if not compare_digest(parse_qs(url.query).get("token", [""])[0].encode(), TOKEN.encode()):
             if not await asyncio.to_thread(access_ok, request.headers.get("Cf-Access-Jwt-Assertion")):
                 return conn.respond(403, "bad token\n")
-            # Login cookie: refuse sockets other sites open with it (they could delete logs)
-            if url.path == "/v1/live" and (not ORIGIN or request.headers.get("Origin") != ORIGIN):
+            # Login cookie: refuse sockets other sites open with it (they could delete logs, watch the camera)
+            if url.path in ("/v1/live", "/v1/camera") and (not ORIGIN or request.headers.get("Origin") != ORIGIN):
                 return conn.respond(403, "bad origin\n")
-        if url.path == "/v1/live":
+        if url.path == "/v1/live" or (url.path == "/v1/camera" and NODE["camera"]):
             return None
         if url.path == "/v1/history":
             return respond(json.dumps(history()).encode(), "application/json")
@@ -284,6 +339,19 @@ async def main(src):
         return conn.respond(404, "not found\n")
 
     async def handler(conn):
+        nonlocal cam_task
+        if conn.request.path.startswith("/v1/camera"):
+            viewers[conn] = 0
+            if not cam_task or cam_task.done():
+                cam_task = asyncio.create_task(camera())
+            try:
+                async for _ in conn:  # any message answers one frame
+                    viewers[conn] = max(0, viewers[conn] - 1)
+            except ConnectionClosed:
+                pass
+            finally:
+                viewers.pop(conn, None)
+            return
         await conn.send(json.dumps({"type": "snapshot", "tracks": tracks.snapshot(), "nodes": NODES}))
         clients.add(conn)
         try:

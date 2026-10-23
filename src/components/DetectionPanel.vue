@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { stored } from "../stored";
-import { computed, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from "vue";
 import SnapshotViewer from "./SnapshotViewer.vue";
-import { newest, snapshots, type Snapshot } from "../live";
+import { newest, snapshots, watchCamera, type Snapshot } from "../live";
 import Icon from "./Icon.vue";
 import { assess, READY, type AcousticTrack, type Bearing } from "../acoustic";
 import { SENSOR_TYPES, type Sensor } from "../composables/useSensors";
@@ -62,6 +62,21 @@ watch(
   },
   { immediate: true },
 );
+// Live camera of a node, shown in the same viewer as snapshots; closing it stops the stream
+const live = shallowRef<Snapshot | null>(null);
+let stopCam: (() => void) | undefined;
+function closeCam() {
+  stopCam?.();
+  stopCam = undefined;
+  live.value = null;
+}
+function openCam(s: Sensor) {
+  closeCam();
+  const node = s.name ?? String(s.id);
+  stopCam = watchCamera((url) => (live.value = { url, node, ts: new Date().toISOString() }));
+}
+onBeforeUnmount(closeCam);
+
 const snapOf = (s: Sensor) => {
   const id = bearingOf(s)?.trackId;
   return id ? snaps[id] ?? null : null;
@@ -135,6 +150,9 @@ const checks = computed(() => {
         >
           <img :src="snapOf(s)!.url" alt="" />
         </button>
+        <button v-if="s.camera" class="cam" :title="t('det.liveCamera')" :aria-label="t('det.liveCamera')" @click.stop="openCam(s)">
+          <Icon name="videocam" />
+        </button>
         <span class="state">
           <template v-if="s.offline">{{ t("det.offline") }}</template>
           <template v-else-if="bearingOf(s) && bearingOf(s)!.sigmaDeg >= 90">{{ t("det.noBearing") }}</template>
@@ -144,6 +162,7 @@ const checks = computed(() => {
       </li>
     </ul>
     <SnapshotViewer :snapshot="viewing" @close="viewingTrack = null" />
+    <SnapshotViewer :snapshot="live" @close="closeCam" />
     </template>
   </section>
 </template>
@@ -256,6 +275,10 @@ code {
 }
 .snap {
   padding: 0;
+  line-height: 0;
+}
+.cam {
+  padding: 2px 4px;
   line-height: 0;
 }
 .snap img {

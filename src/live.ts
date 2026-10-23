@@ -22,6 +22,7 @@ interface LiveNode {
   lon: number;
   online: boolean;
   type?: string; // "rid" = Remote ID receiver; anything else = camera scanner (oracle)
+  camera?: boolean; // live camera on /v1/camera
 }
 
 interface LiveTrack {
@@ -101,6 +102,7 @@ function publishNodes() {
     lng: n.lon,
     name: n.node_id,
     offline: !n.online,
+    camera: n.camera,
   }));
 }
 
@@ -267,6 +269,26 @@ export function deleteHistory(ids: string[]): Promise<string[]> {
     pendingDelete = { resolve, reject };
     ws.send(JSON.stringify({ type: "history.delete", ids }));
   });
+}
+
+// Live camera of the server's node (server/rid_server.py /v1/camera): calls onFrame with an
+// object URL per JPEG, valid until the next one. Every frame is answered, so the server
+// never sends more than the link carries. Returns stop.
+// ponytail: one camera per server; a node id in the path once a server has several
+export function watchCamera(onFrame: (url: string) => void): () => void {
+  const url = LIVE_URL.replace(/\/v1\/live$/, "/v1/camera");
+  const sock = new WebSocket(TOKEN ? `${url}?token=${encodeURIComponent(TOKEN)}` : url);
+  sock.binaryType = "blob";
+  let last = "";
+  sock.onmessage = (e) => {
+    sock.send("1");
+    URL.revokeObjectURL(last);
+    onFrame((last = URL.createObjectURL(e.data)));
+  };
+  return () => {
+    sock.close();
+    URL.revokeObjectURL(last);
+  };
 }
 
 export interface Snapshot {

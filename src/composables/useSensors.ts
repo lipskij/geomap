@@ -16,6 +16,7 @@ export interface Sensor {
   autoNoise?: Noise; // read from the map around it (landuse.ts); not saved in plan files
   name?: string; // backend node id (live feed nodes)
   offline?: boolean; // backend node not reporting
+  camera?: boolean; // backend node streams a live camera (watchCamera)
 }
 
 export interface Plan {
