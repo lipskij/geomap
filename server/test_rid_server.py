@@ -59,15 +59,16 @@ assert hum(pcm(noise + 3000 * np.sin(2 * np.pi * 180 * sec)))[1] < MIC_DB  # no 
 e = Ears("pi-01")
 assert e.check(180, MIC_DB - 1, 0) == [] and e.tick(0) == []
 assert e.check(180, 20, 9.5) == [] and e.check(180, 5, 9.7) == []  # one loud check: not yet
-assert e.check(180, 20, 9.9) == []
+assert all(e.check(f, 20, 8) == [] for f in (120, 150, 190, 140, 230, 170))  # speech: pitch glides
+assert e.check(180, 20, 9.8) == [] and e.check(183, 20, 9.9) == []  # steady, within 5%
 assert [m["type"] for m in e.check(180, 20, 10)] == ["track.created", "contact.alert"]
 first = e.pub["track_id"]
 assert e.pub["latest"] == {"node_id": "pi-01", "bearing_deg": None, "classes": ["drone?", "180 Hz"]}
 assert e.check(180, 20, 10.5) == []  # throttled
 assert [m["type"] for m in e.check(180, 20, 11)] == ["track.updated"]
 assert e.check(180, 5, 11.5) == []  # quiet from here on
-assert e.tick(15) == [] and [m["type"] for m in e.tick(16)] == ["track.lost"]
-assert e.check(180, 20, 19.5) == []
+assert e.tick(12.5) == [] and [m["type"] for m in e.tick(13)] == ["track.lost"]
+assert e.check(180, 20, 19) == [] and e.check(180, 20, 19.5) == []
 assert [m["type"] for m in e.check(180, 20, 20)] == ["track.closed", "track.created", "contact.alert"]
 assert e.pub["track_id"] != first and e.snapshot() == [e.pub]
 e.tick(25)

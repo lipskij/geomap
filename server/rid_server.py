@@ -78,7 +78,7 @@ MIC_DB = float(os.environ.get("RID_MIC_DB", "12"))
 MIC_LOG = os.environ.get("RID_MIC_LOG") == "1"
 MIC_RATE = 16000
 MIC_FRAME = MIC_RATE // 2  # 0.5 s per check: 2 Hz FFT resolution
-SOUND_LOST_S = 5  # no hum this long: contact lost
+SOUND_LOST_S = 2  # no hum this long: contact lost
 
 
 def iso(t):
@@ -210,15 +210,19 @@ class Ears:
         self.node_id = node_id
         self.pub = None
         self.heard = self.sent = 0
-        self.streak = 0  # checks in a row above MIC_DB
+        self.streak = 0  # checks in a row above MIC_DB at a steady pitch
+        self.f0 = 0  # pitch of the last check above MIC_DB
 
     def snapshot(self):
         return [self.pub] if self.pub else []
 
     def check(self, f0, score, now):
-        self.streak = self.streak + 1 if score >= MIC_DB else 0
+        # Steady = within 5% of the last check: a drone holds its pitch, speech glides
+        steady = abs(f0 - self.f0) <= 0.05 * self.f0
+        self.streak = (self.streak + 1 if steady else 1) if score >= MIC_DB else 0
+        self.f0 = f0 if score >= MIC_DB else 0
         new = not self.pub or self.pub["state"] == "lost"
-        if self.streak < (2 if new else 1):  # a new contact needs 1 s of hum: one-off bangs don't count
+        if self.streak < (3 if new else 1):  # a new contact needs 1.5 s of steady hum
             return []
         self.heard = now
         out = [{"type": "track.closed", "data": {"track_id": self.pub["track_id"]}}] if self.pub and new else []
