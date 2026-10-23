@@ -1,7 +1,8 @@
-import { onBeforeUnmount, onMounted, shallowRef, type Ref } from "vue";
+import { shallowRef, type Ref } from "vue";
 import { fetchBearings } from "../api";
 import { crossBearings, headingOf, type AcousticTrack, type Bearing, type Fix } from "../acoustic";
-import { FADE_SECONDS, POLL_MS } from "../config";
+import { FADE_SECONDS } from "../config";
+import { usePoll } from "./useDetections";
 import type { Sensor } from "./useSensors";
 
 export const ACOUSTIC_ID = "acoustic"; // its id in toasts and the alert log
@@ -14,10 +15,7 @@ export function useAcoustic(sensors: Ref<Sensor[]>, onNewTarget: (sensors: numbe
   const hearing = shallowRef<Bearing[]>([]); // every audio sensor hearing it now, even alone
   let fixes: Fix[] = [];
   const latest = new Map<number, Bearing>(); // newest bearing per sensor
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let stopped = false;
-
-  async function tick() {
+  usePoll(async () => {
     try {
       for (const b of await fetchBearings()) latest.set(b.sensorId, b);
     } catch {
@@ -39,13 +37,6 @@ export function useAcoustic(sensors: Ref<Sensor[]>, onNewTarget: (sensors: numbe
     track.value = fixes.length
       ? { bearings: fix ? recent : [], fixes, heading: headingOf(fixes) }
       : null;
-    if (!stopped) timer = setTimeout(tick, POLL_MS);
-  }
-
-  onMounted(tick);
-  onBeforeUnmount(() => {
-    stopped = true;
-    clearTimeout(timer);
   });
 
   return { track, hearing };

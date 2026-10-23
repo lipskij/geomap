@@ -6,8 +6,8 @@ const TILE_URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/12/{x}
 const Z = 12;
 const SIZE = 256;
 
-const tiles = new Map<string, Promise<Float32Array | null>>();
-const ready = new Map<string, Float32Array | null>();
+const ready = new Map<string, Float32Array>(); // decoded tiles
+const pixels = new Map<string, Promise<Uint8ClampedArray | null>>();
 
 // Global pixel position at zoom z (Web Mercator, 256 px tiles)
 export function pixel(lat: number, lng: number, z = Z): [number, number] {
@@ -16,29 +16,37 @@ export function pixel(lat: number, lng: number, z = Z): [number, number] {
   return [((lng + 180) / 360) * n, ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n];
 }
 
-function fetchTile(x: number, y: number): Promise<Float32Array | null> {
-  const key = `${x}/${y}`;
-  let p = tiles.get(key);
+// RGBA of a 256 px tile, file colours as is (no colour management). Cached; a failed
+// fetch resolves null and is tried again on the next call. Also used by landuse.ts
+export function tilePixels(url: string): Promise<Uint8ClampedArray | null> {
+  let p = pixels.get(url);
   if (!p) {
-    p = fetch(TILE_URL.replace("{x}", String(x)).replace("{y}", String(y)))
+    p = fetch(url)
       .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(r.statusText))))
       .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
       .then((bmp) => {
         const ctx = new OffscreenCanvas(SIZE, SIZE).getContext("2d")!;
         ctx.drawImage(bmp, 0, 0);
-        const px = ctx.getImageData(0, 0, SIZE, SIZE).data;
-        const elev = new Float32Array(SIZE * SIZE);
-        for (let i = 0; i < elev.length; i++)
-          elev[i] = px[i * 4] * 256 + px[i * 4 + 1] + px[i * 4 + 2] / 256 - 32768;
-        return elev;
+        return ctx.getImageData(0, 0, SIZE, SIZE).data;
       })
       .catch(() => {
-        tiles.delete(key); // retry on the next redraw
+        pixels.delete(url);
         return null;
       });
-    tiles.set(key, p);
+    pixels.set(url, p);
   }
-  return p.then((e) => (ready.set(key, e), e));
+  return p;
+}
+
+async function fetchTile(x: number, y: number): Promise<void> {
+  const key = `${x}/${y}`;
+  if (ready.has(key)) return;
+  const px = await tilePixels(TILE_URL.replace("{x}", String(x)).replace("{y}", String(y)));
+  if (!px || ready.has(key)) return;
+  const elev = new Float32Array(SIZE * SIZE);
+  for (let i = 0; i < elev.length; i++)
+    elev[i] = px[i * 4] * 256 + px[i * 4 + 1] + px[i * 4 + 2] / 256 - 32768;
+  ready.set(key, elev);
 }
 
 // Fetch the tiles covering these lat/lng boxes ([south, west, north, east])

@@ -1,6 +1,6 @@
 import { ref, watch } from "vue";
 import type { IconName } from "../icons";
-import { loadLocal, loadRemote, savePlan } from "../plans";
+import { loadLocal, savePlan } from "../plans";
 import { SENSOR_MAST_M } from "../coverage";
 import { noiseAt } from "../landuse";
 
@@ -62,12 +62,11 @@ export const mastOf = (s: Sensor) => s.mastM ?? SENSOR_MAST_M;
 
 const SAVE_DELAY_MS = 800; // batch quick edits (e.g. several placements) into one save
 
-// The current sensor plan: saved locally on every change, and to the backend when enabled
+// The current sensor plan: saved in this browser on every change
 export function useSensors() {
   const local = loadLocal();
   const name = ref(local?.name ?? "");
   const sensors = ref<Sensor[]>(local?.sensors ?? []);
-  const saveError = ref<string | null>(null);
   const nextId = () => Math.max(0, ...sensors.value.map((s) => s.id)) + 1;
 
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -75,11 +74,7 @@ export function useSensors() {
     [name, sensors],
     () => {
       clearTimeout(timer);
-      timer = setTimeout(() => {
-        savePlan({ name: name.value, sensors: sensors.value })
-          .then(() => (saveError.value = null))
-          .catch((e: Error) => (saveError.value = e.message));
-      }, SAVE_DELAY_MS);
+      timer = setTimeout(() => savePlan({ name: name.value, sensors: sensors.value }), SAVE_DELAY_MS);
     },
     { deep: true },
   );
@@ -110,14 +105,9 @@ export function useSensors() {
     sensors.value = plan.sensors;
   }
 
-  loadRemote()
-    .then((plan) => plan && replace(plan))
-    .catch((e: Error) => (saveError.value = e.message));
-
   return {
     name,
     sensors,
-    saveError,
     replace,
     add(type: SensorType, lat: number, lng: number) {
       sensors.value.push({ id: nextId(), type, lat, lng });

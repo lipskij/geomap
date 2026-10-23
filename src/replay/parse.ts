@@ -53,7 +53,7 @@ function finish(
 // ---- CSV ----
 
 // RFC 4180: quoted fields may contain commas, quotes ("") and newlines
-function parseCsvRows(text: string): string[][] {
+export function parseCsvRows(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = "";

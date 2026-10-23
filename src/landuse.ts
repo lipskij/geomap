@@ -6,7 +6,7 @@
 // ponytail: depends on the map style's colours; move to OSM landuse/road data on the
 // backend if the style changes or suburbs need their own range
 import type { Noise } from "./composables/useSensors";
-import { pixel } from "./terrain";
+import { pixel, tilePixels } from "./terrain";
 
 const TILE_URL = "https://tile.openstreetmap.org/15/{x}/{y}.png";
 const Z = 15;
@@ -19,29 +19,6 @@ const BUILT: [number, number, number][] = [
   [238, 238, 238], [232, 146, 162], [249, 178, 156], [252, 214, 164], [247, 250, 191],
 ];
 const TOLERANCE = 12; // summed RGB difference: anti-aliased edges still match
-
-const tiles = new Map<string, Promise<Uint8ClampedArray | null>>();
-
-function fetchTile(x: number, y: number): Promise<Uint8ClampedArray | null> {
-  const key = `${x}/${y}`;
-  let p = tiles.get(key);
-  if (!p) {
-    p = fetch(TILE_URL.replace("{x}", String(x)).replace("{y}", String(y)))
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(r.statusText))))
-      .then((b) => createImageBitmap(b))
-      .then((bmp) => {
-        const ctx = new OffscreenCanvas(SIZE, SIZE).getContext("2d")!;
-        ctx.drawImage(bmp, 0, 0);
-        return ctx.getImageData(0, 0, SIZE, SIZE).data;
-      })
-      .catch(() => {
-        tiles.delete(key); // retry next time
-        return null;
-      });
-    tiles.set(key, p);
-  }
-  return p;
-}
 
 const isBuilt = (d: Uint8ClampedArray, i: number) =>
   BUILT.some(([r, g, b]) => Math.abs(d[i] - r) + Math.abs(d[i + 1] - g) + Math.abs(d[i + 2] - b) <= TOLERANCE);
@@ -56,7 +33,7 @@ export async function noiseAt(lat: number, lng: number): Promise<Noise | null> {
   let built = 0, all = 0;
   for (let tx = Math.floor((cx - r) / SIZE); tx <= Math.floor((cx + r) / SIZE); tx++)
     for (let ty = Math.floor((cy - r) / SIZE); ty <= Math.floor((cy + r) / SIZE); ty++) {
-      const d = await fetchTile(tx, ty);
+      const d = await tilePixels(TILE_URL.replace("{x}", String(tx)).replace("{y}", String(ty)));
       if (!d) return null;
       for (let y = 0; y < SIZE; y += 2)
         for (let x = 0; x < SIZE; x += 2) {

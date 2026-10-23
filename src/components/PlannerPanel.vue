@@ -21,7 +21,6 @@ const props = defineProps<{
   sensors: Sensor[];
   placing: SensorType | null;
   overlap: SensorType | "all" | null;
-  saveError: string | null;
   showLive: boolean;
   selected: number | null;
 }>();
@@ -336,9 +335,6 @@ async function onImport(e: Event) {
     </ul>
 
     <p v-if="importError" class="err">{{ importError }}</p>
-    <p v-if="saveError" class="err">
-      {{ t("plan.saveError", { e: saveError }) }}
-    </p>
 
     <footer class="foot">
       <input

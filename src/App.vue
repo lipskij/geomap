@@ -287,7 +287,6 @@ function onExport(id: string, format: ExportFormat) {
     :sensors="plan.sensors.value"
     :placing="placing"
     :overlap="overlap"
-    :save-error="plan.saveError.value"
     :show-live="liveInPlanner"
     :selected="selectedSensor"
     @pick="(type) => (placing = type)"

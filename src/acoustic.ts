@@ -30,11 +30,10 @@ export interface AcousticTrack {
   heading?: Heading;
 }
 
-import { M_PER_DEG } from "./geo";
+import { M_PER_DEG, rad } from "./geo";
 
 type Pos = { lat: number; lng: number };
 
-const rad = (d: number) => (d * Math.PI) / 180;
 const deg = (r: number) => (r * 180) / Math.PI;
 const mPerDegLng = (lat: number) => M_PER_DEG * Math.cos(rad(lat));
 

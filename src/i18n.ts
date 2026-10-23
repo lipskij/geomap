@@ -1,4 +1,5 @@
-import { ref, watch } from "vue";
+import { watch } from "vue";
+import { stored } from "./stored";
 
 // Tiny i18n: a reactive language and a key → text lookup. Reading `t()` inside a
 // template or computed makes it update when the language changes.
@@ -9,32 +10,12 @@ export const LANGS: [Lang, string][] = [
   ["lt", "Lietuvių"],
 ];
 
-const KEY = "geomap.lang";
-
-function initial(): Lang {
-  try {
-    const saved = localStorage.getItem(KEY);
-    if (saved === "en" || saved === "lt") return saved;
-  } catch {
-    // storage blocked
-  }
-  return navigator.language.toLowerCase().startsWith("lt") ? "lt" : "en";
-}
-
-export const lang = ref<Lang>(initial());
-
-watch(
-  lang,
-  (l) => {
-    document.documentElement.lang = l;
-    try {
-      localStorage.setItem(KEY, l);
-    } catch {
-      // storage blocked: choice lasts for this page only
-    }
-  },
-  { immediate: true },
+export const lang = stored<Lang>(
+  "geomap.lang",
+  navigator.language.toLowerCase().startsWith("lt") ? "lt" : "en",
+  ["en", "lt"],
 );
+watch(lang, (l) => (document.documentElement.lang = l), { immediate: true });
 
 // For Intl / toLocale*String
 export const locale = () => (lang.value === "lt" ? "lt-LT" : "en-GB");
@@ -172,7 +153,6 @@ const en = {
   "plan.importEmpty": "no sensors in the file",
   "plan.importError": "Could not import: {e}",
   "plan.replaceConfirm": "Replace the current plan with the imported one?",
-  "plan.saveError": "Plan not saved to the server: {e}. It is kept in this browser.",
   "plan.hint": "Drag a sensor onto the map, or click it and then click the map. Drag placed sensors to move them.",
   "plan.empty": "No sensors placed yet",
   "plan.total": "Total: {n}",
@@ -356,7 +336,6 @@ const lt: Record<MsgKey, string> & Record<string, string> = {
   "plan.importEmpty": "faile nėra jutiklių",
   "plan.importError": "Nepavyko importuoti: {e}",
   "plan.replaceConfirm": "Pakeisti dabartinį planą importuotu?",
-  "plan.saveError": "Planas neišsaugotas serveryje: {e}. Jis išlieka šioje naršyklėje.",
   "plan.hint": "Nutempkite jutiklį ant žemėlapio arba spustelėkite jį, tada žemėlapį. Padėtus jutiklius galima perkelti tempiant.",
   "plan.empty": "Jutiklių dar nepadėta",
   "plan.total": "Iš viso: {n}",
