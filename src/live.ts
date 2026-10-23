@@ -273,9 +273,10 @@ export function deleteHistory(ids: string[]): Promise<string[]> {
 
 // Live camera of the server's node (server/rid_server.py /v1/camera): calls onFrame with an
 // object URL per JPEG, valid until the next one. Every frame is answered, so the server
-// never sends more than the link carries. Returns stop.
+// never sends more than the link carries. onEnd: the stream stopped (no camera, camera
+// busy, connection lost). Returns stop.
 // ponytail: one camera per server; a node id in the path once a server has several
-export function watchCamera(onFrame: (url: string) => void): () => void {
+export function watchCamera(onFrame: (url: string) => void, onEnd: () => void): () => void {
   const url = LIVE_URL.replace(/\/v1\/live$/, "/v1/camera");
   const sock = new WebSocket(TOKEN ? `${url}?token=${encodeURIComponent(TOKEN)}` : url);
   sock.binaryType = "blob";
@@ -285,16 +286,19 @@ export function watchCamera(onFrame: (url: string) => void): () => void {
     URL.revokeObjectURL(last);
     onFrame((last = URL.createObjectURL(e.data)));
   };
+  sock.onclose = onEnd;
   return () => {
+    sock.onclose = null;
     sock.close();
     URL.revokeObjectURL(last);
   };
 }
 
 export interface Snapshot {
-  url: string;
+  url: string; // "" = no image yet
   node: string;
   ts: string; // ISO time
+  status?: "loading" | "ended"; // live camera only
 }
 
 // Newest camera snapshot per node for a track, through the dev server's /oracle proxy

@@ -73,7 +73,10 @@ function closeCam() {
 function openCam(s: Sensor) {
   closeCam();
   const node = s.name ?? String(s.id);
-  stopCam = watchCamera((url) => (live.value = { url, node, ts: new Date().toISOString() }));
+  const show = (url: string, status?: Snapshot["status"]) =>
+    (live.value = { url, node, ts: new Date().toISOString(), status });
+  show("", "loading"); // open at once: the camera takes a second to start
+  stopCam = watchCamera(show, () => show(live.value?.url ?? "", "ended"));
 }
 onBeforeUnmount(closeCam);
 
