@@ -3,7 +3,7 @@ import tempfile
 
 os.environ.setdefault("RID_TOKEN", "test")
 os.environ["RID_LOG"] = tempfile.mkdtemp()
-from rid_server import LOG, Tracks, delete_history, history, jpegs, log_file, log_packet, prune
+from rid_server import LOG, MIC_DB, MIC_FRAME, MIC_RATE, Ears, Tracks, delete_history, history, hum, jpegs, log_file, log_packet, prune
 
 p = {"basic_id": "D1", "mac": "aa", "rssi": -70, "drone_lat": 54.7, "drone_long": 25.29,
      "drone_altitude": 50, "pilot_lat": 54.7, "pilot_long": 25.29}
@@ -46,4 +46,30 @@ assert history() == [] and os.listdir(LOG) == []
 a, b = b"\xff\xd8\x01\xff\x00\xff\xd9", b"\xff\xd8\x02\xff\xd9"
 assert jpegs(a + b + b"\xff\xd8\x03") == ([a, b], b"\xff\xd8\x03")
 assert jpegs(b"\xff\xd8\x03") == ([], b"\xff\xd8\x03")
+# Mic: a hum with 2nd and 3rd harmonics scores high; noise or a lone tone does not
+import numpy as np
+rng = np.random.default_rng(0)
+sec = np.arange(MIC_FRAME) / MIC_RATE
+noise = rng.normal(0, 300, MIC_FRAME)
+pcm = lambda x: np.clip(x, -32768, 32767).astype(np.int16).tobytes()
+f0, score = hum(pcm(noise + sum(2000 / k * np.sin(2 * np.pi * 180 * k * sec) for k in (1, 2, 3))))
+assert abs(f0 - 180) <= 2 and score >= MIC_DB, (f0, score)
+assert hum(pcm(noise))[1] < MIC_DB
+assert hum(pcm(noise + 3000 * np.sin(2 * np.pi * 180 * sec)))[1] < MIC_DB  # no harmonics
+e = Ears("pi-01")
+assert e.check(180, MIC_DB - 1, 0) == [] and e.tick(0) == []
+assert e.check(180, 20, 9.5) == [] and e.check(180, 5, 9.7) == []  # one loud check: not yet
+assert e.check(180, 20, 9.9) == []
+assert [m["type"] for m in e.check(180, 20, 10)] == ["track.created", "contact.alert"]
+first = e.pub["track_id"]
+assert e.pub["latest"] == {"node_id": "pi-01", "bearing_deg": None, "classes": ["drone?", "180 Hz"]}
+assert e.check(180, 20, 10.5) == []  # throttled
+assert [m["type"] for m in e.check(180, 20, 11)] == ["track.updated"]
+assert e.check(180, 5, 11.5) == []  # quiet from here on
+assert e.tick(15) == [] and [m["type"] for m in e.tick(16)] == ["track.lost"]
+assert e.check(180, 20, 19.5) == []
+assert [m["type"] for m in e.check(180, 20, 20)] == ["track.closed", "track.created", "contact.alert"]
+assert e.pub["track_id"] != first and e.snapshot() == [e.pub]
+e.tick(25)
+assert [m["type"] for m in e.tick(140)] == ["track.closed"] and e.snapshot() == []
 print("ok")

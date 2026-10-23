@@ -19,6 +19,11 @@ login as /v1/live. rpicam-vid runs only while someone watches; each viewer answe
 frame with any message and gets at most CAM_IN_FLIGHT unanswered, so a slow link drops
 frames instead of falling behind.
 
+With a USB mic attached, an FFT check listens for a drone-like hum (a tone plus its 2nd
+and 3rd harmonics) and reports it as a contact track heard by this node, no direction.
+RID_MIC_DB (default 12) is how far above the background all three must stand;
+RID_MIC_LOG=1 prints every check's score, for tuning; RID_MIC=off turns it off.
+
 Run:  RID_TOKEN=... python3 rid_server.py            (reads RID_SERIAL)
       RID_TOKEN=... python3 rid_server.py - < lines   (reads stdin)
 """
@@ -68,6 +73,12 @@ UPDATE_S = 1  # at most one track.updated per track per second
 CAM_CMD = ["rpicam-vid", "-t", "0", "-n", "--codec", "mjpeg", "--width", "1280", "--height", "720",
            "--framerate", "15", "-q", "50", "--flush", "-o", "-"]
 CAM_IN_FLIGHT = 2  # frames sent but not yet answered, per viewer
+MIC = os.environ.get("RID_MIC")  # ALSA device, e.g. plughw:CARD=Device; unset = first USB mic; off = none
+MIC_DB = float(os.environ.get("RID_MIC_DB", "12"))
+MIC_LOG = os.environ.get("RID_MIC_LOG") == "1"
+MIC_RATE = 16000
+MIC_FRAME = MIC_RATE // 2  # 0.5 s per check: 2 Hz FFT resolution
+SOUND_LOST_S = 5  # no hum this long: contact lost
 
 
 def iso(t):
@@ -162,6 +173,80 @@ def jpegs(buf):
         frames.append(buf[:end + 2])
         buf = buf[end + 2:]
     return frames, buf
+
+
+def find_mic():
+    """ALSA name of the first capture device (arecord -l), or None."""
+    if MIC:
+        return None if MIC == "off" else MIC
+    try:
+        out = subprocess.run(["arecord", "-l"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    m = re.search(r"^card \d+: (\w+) \[", out, re.M)
+    return f"plughw:CARD={m[1]}" if m else None
+
+
+def hum(samples):
+    """(f0 Hz, score dB) of 16-bit mono PCM: the strongest 80-500 Hz tone, scored by the
+    weakest of it and its 2nd and 3rd harmonics against the 100-1000 Hz median level.
+    ponytail: plain harmonic check, fooled by engines and fans; a classifier when it matters"""
+    import numpy as np  # only needed with a mic
+
+    x = np.frombuffer(samples, np.int16).astype(np.float32)
+    spec = np.abs(np.fft.rfft(x * np.hanning(len(x))))
+    hz = np.fft.rfftfreq(len(x), 1 / MIC_RATE)
+    floor = np.median(spec[(hz >= 100) & (hz <= 1000)]) + 1e-9
+    f0 = hz[np.argmax(np.where((hz >= 80) & (hz <= 500), spec, 0))]
+    step = hz[1]
+    peak = lambda f: spec[max(0, round(f / step) - 2):round(f / step) + 3].max()  # ±4 Hz
+    return float(f0), float(min(20 * np.log10(peak(k * f0) / floor) for k in (1, 2, 3)))
+
+
+class Ears:
+    """The mic's one contact track: heard -> active, quiet SOUND_LOST_S -> lost, CLOSE_S -> closed."""
+
+    def __init__(self, node_id):
+        self.node_id = node_id
+        self.pub = None
+        self.heard = self.sent = 0
+        self.streak = 0  # checks in a row above MIC_DB
+
+    def snapshot(self):
+        return [self.pub] if self.pub else []
+
+    def check(self, f0, score, now):
+        self.streak = self.streak + 1 if score >= MIC_DB else 0
+        new = not self.pub or self.pub["state"] == "lost"
+        if self.streak < (2 if new else 1):  # a new contact needs 1 s of hum: one-off bangs don't count
+            return []
+        self.heard = now
+        out = [{"type": "track.closed", "data": {"track_id": self.pub["track_id"]}}] if self.pub and new else []
+        if new:
+            self.pub = {"track_id": f"sound-{self.node_id}-{int(now)}", "kind": "contact",
+                        "audio_confirmed": True}
+        self.pub.update(state="active", last_seen=iso(now),
+                        latest={"node_id": self.node_id, "bearing_deg": None,
+                                "classes": ["drone?", f"{f0:.0f} Hz"]})
+        if new:
+            self.sent = now
+            return out + [{"type": "track.created", "data": self.pub},
+                          {"type": "contact.alert", "data": self.pub}]
+        if now - self.sent >= UPDATE_S:
+            self.sent = now
+            return [{"type": "track.updated", "data": self.pub}]
+        return []
+
+    def tick(self, now):
+        if not self.pub:
+            return []
+        if self.pub["state"] == "active" and now - self.heard >= SOUND_LOST_S:
+            self.pub["state"] = "lost"
+            return [{"type": "track.lost", "data": self.pub}]
+        if now - self.heard >= CLOSE_S:
+            done, self.pub = self.pub, None
+            return [{"type": "track.closed", "data": {"track_id": done["track_id"]}}]
+        return []
 
 
 def log_packet(track_id, p, now):
@@ -283,6 +368,9 @@ async def main(src):
     queue = asyncio.Queue()
     NODE["camera"] = await asyncio.to_thread(camera_present)
     print(f"camera: {'found' if NODE['camera'] else 'none'}", flush=True)
+    mic = await asyncio.to_thread(find_mic)
+    ears = Ears(NODE["node_id"])
+    print(f"mic: {mic or 'none'}", flush=True)
     viewers = {}  # camera socket -> frames sent but not answered
     cam_task = None
 
@@ -314,6 +402,26 @@ async def main(src):
             d, ll = m["data"], m["data"].get("latest", {})
             print(m["type"], d.get("uas_id", d["track_id"]), ll.get("lat"), ll.get("lon"),
                   ll.get("alt_geo"), d.get("nodes", {}).get(NODE["node_id"], {}).get("rssi"), flush=True)
+
+    async def listen():
+        """Read the mic in MIC_FRAME chunks and check each; restart arecord if it quits."""
+        while True:
+            proc = await asyncio.create_subprocess_exec(
+                "arecord", "-q", "-D", mic, "-f", "S16_LE", "-r", str(MIC_RATE), "-c", "1", "-t", "raw",
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            try:
+                while True:
+                    f0, score = hum(await proc.stdout.readexactly(MIC_FRAME * 2))
+                    if MIC_LOG:
+                        print(f"mic: {f0:.0f} Hz {score:.1f} dB", flush=True)
+                    send(ears.check(f0, score, time.time()))
+            except asyncio.IncompleteReadError:
+                print("mic: arecord stopped; retrying in 3 s", flush=True)
+            finally:
+                if proc.returncode is None:
+                    proc.kill()
+                await proc.wait()
+            await asyncio.sleep(3)
 
     async def auth(conn, request):
         from hmac import compare_digest
@@ -352,7 +460,8 @@ async def main(src):
             finally:
                 viewers.pop(conn, None)
             return
-        await conn.send(json.dumps({"type": "snapshot", "tracks": tracks.snapshot(), "nodes": NODES}))
+        await conn.send(json.dumps({"type": "snapshot", "tracks": tracks.snapshot() + ears.snapshot(),
+                                    "nodes": NODES}))
         clients.add(conn)
         try:
             async for msg in conn:
@@ -374,7 +483,7 @@ async def main(src):
         while True:
             await asyncio.sleep(1)
             now = time.time()
-            send(tracks.tick(now))
+            send(tracks.tick(now) + ears.tick(now))
             if now - pruned >= 3600:
                 pruned = now
                 prune(now)
@@ -383,6 +492,8 @@ async def main(src):
     async with serve(handler, "0.0.0.0", PORT, process_request=auth):
         print(f"listening on :{PORT}/v1/live", flush=True)
         asyncio.create_task(ticker())
+        if mic:
+            asyncio.create_task(listen())
         while True:
             line = (await queue.get()).strip()
             try:
