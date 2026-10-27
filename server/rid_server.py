@@ -91,6 +91,7 @@ EMA_ALPHA = 0.25
 CONF_ON = float(os.environ.get("RID_MIC_CONF", "0.30"))
 CONF_OFF = CONF_ON * 0.6  # batear: 0.30 on, 0.18 off
 SUSTAIN_ON, SUSTAIN_OFF = 2, 8  # frames in a row to raise / clear the contact
+PITCH_TOL = 0.05  # ours, not batear's: f0 within 5% of the last frame, a drone holds it, speech glides
 SOUND_LOST_S = 2  # no mic frames this long (ESP32 quiet): contact lost
 
 
@@ -204,24 +205,32 @@ def hum(samples):
     for start in np.linspace(0, len(x) - FFT_N, FRAMES_PER_LINE).astype(int):
         w = x[start:start + FFT_N] * np.hanning(FFT_N)
         psd = np.abs(np.fft.rfft(w)) ** 2
+        floor = psd[1:].mean() + 1e-18
         k = k0 + int(np.argmax(psd[k0:k1 + 1]))
-        snr = psd[k] / (psd[1:].mean() + 1e-18)
-        h2, h3 = (psd[m * k - 2:m * k + 3].max() / (psd[k] + 1e-18) for m in (2, 3))  # ±2 bins
-        ok = snr >= PEAK_MIN_SNR and h2 >= MIN_H2 and h3 >= MIN_H3
-        if snr < PEAK_MIN_SNR:
-            conf = 0.0
-        elif ok:
-            conf = min(1.0, snr / 25 * (h2 * h3) ** 0.5)
-        else:
-            conf = min(0.99, min(1.0, snr / 40) * max(h2 / MIN_H2, h3 / MIN_H3))
-        out.append((float(k * step), float(conf), bool(ok), float(np.sqrt((w ** 2).mean()))))
+        # The 2nd or 3rd harmonic is often louder than f0: also try the peak / 2 and / 3 as f0
+        ok, conf, f0 = max(_harmonics(psd, floor, c) for c in (k, round(k / 2), round(k / 3)) if c >= k0)
+        out.append((f0 * step, conf, ok, float(np.sqrt((w ** 2).mean()))))
     return out
+
+
+def _harmonics(psd, floor, k):
+    """(ok, confidence, f0 bin) of hum()'s check with f0 at the strongest bin within ±2 of k."""
+    k += int(psd[k - 2:k + 3].argmax()) - 2
+    snr = psd[k] / floor
+    h2, h3 = (psd[m * k - 2:m * k + 3].max() / (psd[k] + 1e-18) for m in (2, 3))  # ±2 bins
+    ok = bool(snr >= PEAK_MIN_SNR and h2 >= MIN_H2 and h3 >= MIN_H3)
+    if snr < PEAK_MIN_SNR:
+        return ok, 0.0, k
+    if ok:
+        return ok, float(min(1.0, snr / 25 * (h2 * h3) ** 0.5)), k
+    return ok, float(min(0.99, min(1.0, snr / 40) * max(h2 / MIN_H2, h3 / MIN_H3))), k
 
 
 class Ears:
     """The mic's one contact track, with batear's alarm smoothing: a confidence EMA raises it
     after SUSTAIN_ON good frames in a row at CONF_ON, and SUSTAIN_OFF bad ones (or SOUND_LOST_S
-    without frames) mark it lost; CLOSE_S lost -> closed. Heard again after lost = new track_id."""
+    without frames) mark it lost; CLOSE_S lost -> closed. Heard again after lost = new track_id.
+    Good = harmonics ok at a steady pitch (PITCH_TOL)."""
 
     def __init__(self, node_id):
         self.node_id = node_id
@@ -229,11 +238,14 @@ class Ears:
         self.heard = self.sent = 0
         self.ema = 0.0
         self.on = self.off = 0  # good / bad frames in a row
+        self.f0 = 0  # last frame's pitch
 
     def snapshot(self):
         return [self.pub] if self.pub else []
 
     def check(self, f0, conf, ok, rms, now):
+        ok = ok and abs(f0 - self.f0) <= max(PITCH_TOL * f0, 1.5 * MIC_RATE / FFT_N)  # ±1.5 bins at least
+        self.f0 = f0
         loud = rms >= RMS_MIN
         if loud:
             self.ema = EMA_ALPHA * (conf if ok else min(conf, 0.15)) + (1 - EMA_ALPHA) * self.ema
@@ -387,9 +399,11 @@ def read_lines(src, loop, queue):
         try:
             with serial.Serial(src, 115200, timeout=1) as port:
                 print(f"serial open: {src}", flush=True)
-                while True:
-                    line = port.readline()
-                    if line:
+                buf = b""
+                while True:  # whole chunks: readline() reads byte by byte, too slow for the mic stream
+                    buf += port.read(max(1, port.in_waiting))
+                    *lines, buf = buf.split(b"\n")
+                    for line in lines:
                         loop.call_soon_threadsafe(queue.put_nowait, line.decode(errors="replace"))
         except serial.SerialException as e:
             print(f"serial: {e}; retrying in 3 s", flush=True)
