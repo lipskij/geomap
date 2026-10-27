@@ -3,7 +3,7 @@ import tempfile
 
 os.environ.setdefault("RID_TOKEN", "test")
 os.environ["RID_LOG"] = tempfile.mkdtemp()
-from rid_server import LOG, MIC_DB, MIC_FRAME, MIC_RATE, Ears, Tracks, delete_history, history, hum, jpegs, log_file, log_packet, prune
+from rid_server import CLOSE_S, CONF_OFF, LOG, MIC_FRAME, MIC_RATE, RMS_MIN, Ears, Tracks, delete_history, history, hum, jpegs, log_file, log_packet, prune
 
 p = {"basic_id": "D1", "mac": "aa", "rssi": -70, "drone_lat": 54.7, "drone_long": 25.29,
      "drone_altitude": 50, "pilot_lat": 54.7, "pilot_long": 25.29}
@@ -46,31 +46,35 @@ assert history() == [] and os.listdir(LOG) == []
 a, b = b"\xff\xd8\x01\xff\x00\xff\xd9", b"\xff\xd8\x02\xff\xd9"
 assert jpegs(a + b + b"\xff\xd8\x03") == ([a, b], b"\xff\xd8\x03")
 assert jpegs(b"\xff\xd8\x03") == ([], b"\xff\xd8\x03")
-# Mic: a hum with 2nd and 3rd harmonics scores high; noise or a lone tone does not
+# Mic: a hum with 2nd and 3rd harmonics passes every frame; noise, a lone tone or a dead line do not.
+# Noise often has some 'harmonics' by chance: its low confidence is what keeps the alarm off
 import numpy as np
 rng = np.random.default_rng(0)
 sec = np.arange(MIC_FRAME) / MIC_RATE
 noise = rng.normal(0, 300, MIC_FRAME)
 pcm = lambda x: np.clip(x, -32768, 32767).astype(np.int16).tobytes()
-f0, score = hum(pcm(noise + sum(2000 / k * np.sin(2 * np.pi * 180 * k * sec) for k in (1, 2, 3))))
-assert abs(f0 - 180) <= 2 and score >= MIC_DB, (f0, score)
-assert hum(pcm(noise))[1] < MIC_DB
-assert hum(pcm(noise + 3000 * np.sin(2 * np.pi * 180 * sec)))[1] < MIC_DB  # no harmonics
+frames = hum(pcm(noise + sum(4000 / k * np.sin(2 * np.pi * 300 * k * sec) for k in (1, 2, 3))))
+assert len(frames) == 3 and all(ok and abs(f0 - 300) <= 16 and conf > 0.3 for f0, conf, ok, _ in frames), frames
+assert max(conf for _, conf, _, _ in hum(pcm(noise))) < CONF_OFF
+assert not any(ok for _, _, ok, _ in hum(pcm(noise + 3000 * np.sin(2 * np.pi * 300 * sec))))  # no harmonics
+assert all(rms < RMS_MIN for *_, rms in hum(pcm(-(np.arange(MIC_FRAME) % 4 < 2).astype(int))))  # only 0 and -1
+assert hum(b"") == []
+# Alarm smoothing: the EMA needs 3 good frames to reach 0.30, then 2 in a row raise it; 8 bad clear it
 e = Ears("pi-01")
-assert e.check(180, MIC_DB - 1, 0) == [] and e.tick(0) == []
-assert e.check(180, 20, 9.5) == [] and e.check(180, 5, 9.7) == []  # one loud check: not yet
-assert all(e.check(f, 20, 8) == [] for f in (120, 150, 190, 140, 230, 170))  # speech: pitch glides
-assert e.check(180, 20, 9.8) == [] and e.check(183, 20, 9.9) == []  # steady, within 5%
-assert [m["type"] for m in e.check(180, 20, 10)] == ["track.created", "contact.alert"]
+good, bad = (300, 1.0, True, 500), (300, 0.0, False, 500)
+assert [e.check(*good, 10) for _ in range(2)] == [[], []] and e.tick(10) == []
+assert [m["type"] for m in e.check(*good, 10)] == ["track.created", "contact.alert"]
 first = e.pub["track_id"]
-assert e.pub["latest"] == {"node_id": "pi-01", "bearing_deg": None, "classes": ["drone?", "180 Hz"]}
-assert e.check(180, 20, 10.5) == []  # throttled
-assert [m["type"] for m in e.check(180, 20, 11)] == ["track.updated"]
-assert e.check(180, 5, 11.5) == []  # quiet from here on
-assert e.tick(12.5) == [] and [m["type"] for m in e.tick(13)] == ["track.lost"]
-assert e.check(180, 20, 19) == [] and e.check(180, 20, 19.5) == []
-assert [m["type"] for m in e.check(180, 20, 20)] == ["track.closed", "track.created", "contact.alert"]
+assert e.pub["latest"] == {"node_id": "pi-01", "bearing_deg": None, "classes": ["drone?", "300 Hz"]}
+assert e.check(*good, 10.5) == []  # throttled
+assert [m["type"] for m in e.check(*good, 11)] == ["track.updated"]
+assert all(e.check(*bad, 11.2) == [] for _ in range(7)) and e.check(*good, 11.3) == []  # 7 bad, then good: kept
+assert all(e.check(*bad, 11.5) == [] for _ in range(7))
+assert [m["type"] for m in e.check(*bad, 11.5)] == ["track.lost"]  # 8th bad in a row
+assert e.check(300, 1.0, True, RMS_MIN / 2, 12) == []  # quiet frames never raise it
+assert [e.check(*good, 20) for _ in range(2)] == [[], []]
+assert [m["type"] for m in e.check(*good, 20)] == ["track.closed", "track.created", "contact.alert"]
 assert e.pub["track_id"] != first and e.snapshot() == [e.pub]
-e.tick(25)
-assert [m["type"] for m in e.tick(140)] == ["track.closed"] and e.snapshot() == []
+assert e.tick(21) == [] and [m["type"] for m in e.tick(22.5)] == ["track.lost"]  # ESP32 went quiet
+assert [m["type"] for m in e.tick(20 + CLOSE_S)] == ["track.closed"] and e.snapshot() == []
 print("ok")

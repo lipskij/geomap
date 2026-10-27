@@ -159,7 +159,7 @@ const checks = computed(() => {
         </button>
         <span class="state">
           <template v-if="s.offline">{{ t("det.offline") }}</template>
-          <template v-else-if="bearingOf(s) && bearingOf(s)!.sigmaDeg >= 90">{{ t("det.noBearing") }}</template>
+          <template v-else-if="bearingOf(s) && bearingOf(s)!.sigmaDeg >= 90">{{ bearingOf(s)!.classes?.join(" · ") || t("det.noBearing") }}</template>
           <template v-else-if="bearingOf(s)">{{ bearingOf(s)!.deg.toFixed(0) }}° ±{{ bearingOf(s)!.sigmaDeg }}°</template>
           <template v-else>{{ t("det.silent") }}</template>
         </span>

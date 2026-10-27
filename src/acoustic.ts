@@ -8,6 +8,7 @@ export interface Bearing {
   deg: number; // 0 = north, clockwise
   sigmaDeg: number; // ± measurement error
   t: number; // ms
+  classes?: string[]; // live feed: what the node thinks it hears, e.g. ["drone?", "180 Hz"]
 }
 
 export interface Fix {

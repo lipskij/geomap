@@ -228,6 +228,7 @@ export function liveBearings(): Bearing[] {
       trackId: t.track_id,
       deg: known ? l.bearing_deg! : 0,
       sigmaDeg: known ? (l.bearing_uncertainty_deg ?? 10) : 180,
+      classes: l.classes,
       // The backend keeps a contact active until 15 s without events; cameras report
       // every few seconds, so its own last_seen would drop out of the 2 s crossing window
       t: Date.now(),
