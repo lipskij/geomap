@@ -3,7 +3,7 @@ import tempfile
 
 os.environ.setdefault("RID_TOKEN", "test")
 os.environ["RID_LOG"] = tempfile.mkdtemp()
-from rid_server import CLOSE_S, CONF_OFF, LOG, MIC_FRAME, MIC_RATE, MICS, RMS_MIN, Ears, Tracks, channels, delete_history, hear, history, hum, jpegs, log_file, log_packet, prune
+from rid_server import CLOSE_S, CONF_OFF, LOG, MIC_FRAME, MIC_RATE, MICS, PITCH_WIN, RMS_MIN, Ears, Tracks, channels, delete_history, hear, history, hum, listen, jpegs, log_file, log_packet, prune
 
 p = {"basic_id": "D1", "mac": "aa", "rssi": -70, "drone_lat": 54.7, "drone_long": 25.29,
      "drone_altitude": 50, "pilot_lat": 54.7, "pilot_long": 25.29}
@@ -63,10 +63,18 @@ assert hum(b"") == []
 frames = hum(pcm(noise + 1500 * np.sin(2 * np.pi * 300 * sec) + 4000 * np.sin(2 * np.pi * 600 * sec)
                  + 1500 * np.sin(2 * np.pi * 900 * sec)))
 assert all(ok and abs(f0 - 300) <= 16 for f0, _, ok, _ in frames), frames
+# Steady pitch: ok once 1 s (PITCH_WIN frames) of the same tone; notes jumping around never are
+from collections import deque
+tone = lambda f: pcm(noise + sum(4000 / k * np.sin(2 * np.pi * f * k * sec) for k in (1, 2)))
+pitch = deque(maxlen=PITCH_WIN)
+assert [ok for _, _, ok, _ in listen(tone(300), pitch) + listen(tone(310), pitch)] == [0, 0, 0, 0, 0, 1]
+pitch = deque(maxlen=PITCH_WIN)
+assert not any(ok for f in (300, 450, 300, 600, 300, 450) for _, _, ok, _ in listen(tone(f), pitch))
 # Several mics: any one hearing the drone is enough, empty slots are skipped, none = silence
-drone = pcm(noise + sum(4000 / k * np.sin(2 * np.pi * 300 * k * sec) for k in (1, 2, 3)))
-assert all(ok for _, _, ok, _ in hear([pcm(noise), b"", drone, b""]))
-assert [rms for *_, rms in hear([b"", b""])] == [0, 0, 0]
+drone = tone(300)
+pitches = [deque(maxlen=PITCH_WIN) for _ in range(MICS)]
+assert [ok for _ in range(2) for _, _, ok, _ in hear([pcm(noise), b"", drone, b""], pitches)][-1]
+assert [rms for *_, rms in hear([b"", b""], pitches)] == [0, 0, 0]
 x = np.frombuffer(channels([b"", drone]), np.int16).reshape(MIC_FRAME, MICS)
 assert not x[:, 0].any() and x[:, 1].tobytes() == drone and not x[:, 2:].any()
 # Alarm smoothing: the EMA reaches 0.30 on the 2nd good frame, 2 good frames in a row at 0.30 raise

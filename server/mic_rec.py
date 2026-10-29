@@ -8,6 +8,7 @@ Run:  python3 mic_rec.py [seconds] [file.wav]    (no seconds: until Ctrl-C;
 """
 
 import asyncio
+from collections import deque
 import os
 import sys
 import wave
@@ -23,7 +24,7 @@ from websockets.asyncio.client import connect  # noqa: E402
 
 import numpy as np  # noqa: E402
 
-from rid_server import MIC_RATE, MICS, PORT, TOKEN, hum  # noqa: E402
+from rid_server import MIC_RATE, MICS, PITCH_WIN, PORT, TOKEN, listen  # noqa: E402
 
 
 async def record(seconds, path):
@@ -34,12 +35,13 @@ async def record(seconds, path):
         async with connect(f"ws://localhost:{PORT}/v1/mic?token={TOKEN}") as ws:
             print(f"recording to {path}" + (f" for {seconds:g} s" if seconds else ", Ctrl-C to stop"))
             got = 0
+            pitches = [deque(maxlen=PITCH_WIN) for _ in range(MICS)]
             while not seconds or got < seconds * MIC_RATE:
                 pcm = await asyncio.wait_for(ws.recv(), 5)  # ESP32 sends every 0.5 s
                 w.writeframes(pcm)
                 x = np.frombuffer(pcm, np.int16).reshape(-1, MICS)
                 got += len(x)
-                best = {m: max(hum(x[:, m].tobytes()), key=lambda r: (r[2], r[1]))
+                best = {m: max(listen(x[:, m].tobytes(), pitches[m]), key=lambda r: (r[2], r[1]))
                         for m in range(MICS) if x[:, m].any()}
                 top = max(best, key=lambda m: (best[m][2], best[m][1]), default=None)
                 print(f"{got / MIC_RATE:6.1f} s" + "".join(

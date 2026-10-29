@@ -21,7 +21,7 @@ frames instead of falling behind.
 
 The ESP32 also streams its INMP441 mics as {"mic": ["<base64 16-bit PCM, 16 kHz>", "" ...]}
 lines, one per 0.5 s, "" for an empty slot (see firmware/). An FFT check listens to each mic
-for a drone-like hum (a tone plus its 2nd and 3rd harmonics) and reports it as a contact track
+for a drone-like hum (a tone with its 2nd harmonic, holding its pitch for a second) and reports it as a contact track
 heard by this node, no direction, when any mic hears it.
 RID_MIC_CONF (default 0.30) is the smoothed confidence that raises it;
 RID_MIC_LOG=1 prints every check's result, for tuning. /v1/mic streams the raw PCM, one binary
@@ -42,6 +42,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections import deque
 from datetime import datetime, timezone
 
 from websockets.asyncio.server import broadcast, serve
@@ -88,7 +89,10 @@ FFT_N = 1024
 FRAMES_PER_LINE = 3
 F0_MIN, F0_MAX = 180, 2400  # Hz; 3 x f0 stays below Nyquist
 PEAK_MIN_SNR = 4  # f0 power vs the mean spectrum
-MIN_H2, MIN_H3 = 0.07, 0.035  # 2nd and 3rd harmonic power vs f0
+MIN_H2 = 0.07  # 2nd harmonic power vs f0. No 3rd: speakers and distance lose it (batear wants 0.035)
+# Ours, not batear's: f0 within PITCH_TOL of its median for PITCH_SHARE of the last PITCH_WIN frames
+# (1 s). A drone's pitch drifts slowly (its motors a few % apart); music jumps between notes
+PITCH_WIN, PITCH_TOL, PITCH_SHARE = 6, 0.10, 5 / 6
 RMS_MIN = 0.0004 * 32768  # windowed RMS below this: silence, or a dead mic line
 EMA_ALPHA = 0.25
 CONF_ON = float(os.environ.get("RID_MIC_CONF", "0.30"))
@@ -194,7 +198,7 @@ def jpegs(buf):
 def hum(samples):
     """Drone check of 16-bit mono PCM, per FFT_N frame: [(f0 Hz, confidence 0..1, harmonics ok,
     windowed rms)]. f0 is the strongest F0_MIN-F0_MAX tone; ok when it stands PEAK_MIN_SNR over
-    the mean spectrum and its 2nd and 3rd harmonics reach MIN_H2 / MIN_H3 of its power.
+    the mean spectrum and its 2nd harmonic reaches MIN_H2 of its power.
     ponytail: harmonic heuristic, fooled by engines and fans; a classifier when it matters"""
     import numpy as np  # only needed once the mic sends
 
@@ -219,21 +223,36 @@ def _harmonics(psd, floor, k):
     """(ok, confidence, f0 bin) of hum()'s check with f0 at the strongest bin within ±2 of k."""
     k += int(psd[k - 2:k + 3].argmax()) - 2
     snr = psd[k] / floor
-    h2, h3 = (psd[m * k - 2:m * k + 3].max() / (psd[k] + 1e-18) for m in (2, 3))  # ±2 bins
-    ok = bool(snr >= PEAK_MIN_SNR and h2 >= MIN_H2 and h3 >= MIN_H3)
+    h2 = psd[2 * k - 2:2 * k + 3].max() / (psd[k] + 1e-18)  # ±2 bins
+    ok = bool(snr >= PEAK_MIN_SNR and h2 >= MIN_H2)
     if snr < PEAK_MIN_SNR:
         return ok, 0.0, k
     if ok:
-        return ok, float(min(1.0, snr / 25 * (h2 * h3) ** 0.5)), k
-    return ok, float(min(0.99, min(1.0, snr / 40) * max(h2 / MIN_H2, h3 / MIN_H3))), k
+        return ok, float(min(1.0, snr / 25 * h2 ** 0.5)), k
+    return ok, float(min(0.99, min(1.0, snr / 40) * h2 / MIN_H2)), k
 
 
-def hear(pcms):
-    """hum() of each mic's PCM (b"" = empty slot), best per frame: harmonics ok first, then
-    confidence. Like batear's one-mic detectors side by side; an average of mics at different
-    distances cancels the harmonics. No live mic: silent frames, so the alarm still decays."""
-    live = [m for m in pcms if m] or [bytes(2 * MIC_FRAME)]
-    return [max(f, key=lambda r: (r[2], r[1])) for f in zip(*map(hum, live))]
+def listen(pcm, pitch):
+    """hum() of one mic, ok only while its pitch is steady: pitch is that mic's deque of recent f0s
+    (maxlen PITCH_WIN), kept between calls."""
+    import numpy as np
+
+    out = []
+    for f0, conf, ok, rms in hum(pcm):
+        pitch.append(f0)
+        f = np.array(pitch)
+        med = np.median(f)
+        steady = len(f) == PITCH_WIN and np.mean(np.abs(f - med) <= PITCH_TOL * med) >= PITCH_SHARE
+        out.append((f0, conf, ok and bool(steady), rms))
+    return out
+
+
+def hear(pcms, pitches):
+    """listen() to each mic's PCM (b"" = empty slot; pitches: a deque per slot), best per frame: ok
+    first, then confidence. Like batear's one-mic detectors side by side; an average of mics at
+    different distances cancels the harmonics. No live mic: silent frames, so the alarm decays."""
+    heard = [listen(m, p) for m, p in zip(pcms, pitches) if m]
+    return [max(f, key=lambda r: (r[2], r[1])) for f in zip(*heard)] or hum(bytes(2 * MIC_FRAME))
 
 
 def channels(pcms):
@@ -252,7 +271,8 @@ class Ears:
     after SUSTAIN_ON good frames in a row at CONF_ON, and SUSTAIN_OFF bad ones (or SOUND_LOST_S
     without frames) mark it lost; CLOSE_S lost -> closed. Heard again before closed = same track,
     no new alert (a distant drone drops in and out); after closed = new track_id and alert.
-    Good = harmonics ok. No steady-pitch check: a multirotor's f0 hops between its motors."""
+    Good = hear()'s ok: harmonics and a steady pitch over PITCH_WIN frames, not frame to frame (a
+    multirotor's f0 hops between its motors)."""
 
     def __init__(self, node_id):
         self.node_id = node_id
@@ -440,6 +460,7 @@ async def main(src):
     ears = Ears(NODE["node_id"])
     viewers = {}  # camera socket -> frames sent but not answered
     listeners = set()  # /v1/mic sockets
+    pitches = [deque(maxlen=PITCH_WIN) for _ in range(MICS)]  # recent f0s per mic, for listen()
     cam_task = None
 
     async def camera():
@@ -569,7 +590,7 @@ async def main(src):
                 try:
                     mic = p["mic"]
                     pcms = [base64.b64decode(m) for m in (mic if isinstance(mic, list) else [mic])]
-                    frames = hear(pcms)
+                    frames = hear(pcms, pitches)
                     multi = channels(pcms)
                 except (TypeError, ValueError):  # cut-off line: odd byte count or bad base64
                     continue
