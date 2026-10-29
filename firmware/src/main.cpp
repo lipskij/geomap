@@ -26,7 +26,7 @@ const int SERIAL1_TX_PIN = 5;
 // Up to 4 INMP441s on two I2S buses, two mics per bus sharing SCK/WS/SD:
 //   bus 0: SCK D0, WS D1, SD D8  -> mic 1 (L/R to GND), mic 2 (L/R to 3.3V)
 //   bus 1: SCK D2, WS D3, SD D9  -> mic 3 (L/R to GND), mic 4 (L/R to 3.3V)
-// Missing mics are fine: their slot reads flat and is left out of the mix.
+// Missing mics are fine: their slot reads flat and is not sent.
 const int MIC_BUSES = 2;
 const int MIC_SCK_PINS[MIC_BUSES] = {1, 3};
 const int MIC_WS_PINS[MIC_BUSES] = {2, 4};
@@ -34,12 +34,10 @@ const int MIC_SD_PINS[MIC_BUSES] = {7, 8};
 const int MICS = 2 * MIC_BUSES;
 // 16 kHz like batear: the INMP441's own decimation filter then cuts everything above 8 kHz.
 // At 48 kHz our 3-sample average let 8-24 kHz whine alias into the drone band.
-const int MIC_I2S_RATE = 16000;
-const int MIC_RATE = 16000;  // sent to the Pi; must match server/rid_server.py
-const int MIC_DECIMATE = MIC_I2S_RATE / MIC_RATE;
+const int MIC_RATE = 16000;  // must match server/rid_server.py
 const int MIC_FRAME = MIC_RATE / 2;  // samples per line = 0.5 s
-const int MIC_CHUNK = 256;  // output samples per I2S read
-// A mic is mixed in while its last frame's RMS (16-bit units, DC removed) is in this range:
+const int MIC_CHUNK = 256;  // samples per I2S read
+// A mic is sent while its frame's RMS (16-bit units, DC removed) is in this range:
 // below is an empty slot, above is the full-scale noise of a miswired one (two mics on one slot)
 const float MIC_LIVE_MIN = 4, MIC_LIVE_MAX = 12000;
 I2SClass i2s[MIC_BUSES];
@@ -161,21 +159,22 @@ void send_json_fast(const id_data *UAV) {
   xSemaphoreGive(serialLock);
 }
 
-// Streams the mics to the Pi as {"mic":"<base64 16-bit LE PCM, 16 kHz>","lvl":[rms x4]} lines,
-// one per 0.5 s. "mic" is the average of the live mics; "lvl" is each mic's RMS, for wiring checks.
+// Streams the mics to the Pi as {"mic":["<base64 16-bit LE PCM, 16 kHz>" x4],"lvl":[rms x4]} lines,
+// one per 0.5 s. Each mic is sent on its own, "" for an empty or miswired slot: the Pi checks
+// every mic separately like batear's one-mic detectors (an average cancels harmonics between
+// mics at different distances). "lvl" is each mic's RMS, for wiring checks.
 // Each bus is read as stereo: S3 mono RX can return all zeros (batear).
-// ponytail: averaging MIC_DECIMATE samples is a weak anti-alias filter; enough for a <8 kHz drone check
-// ponytail: liveness lags one frame, so a mic joins or leaves the mix 0.5 s late
+// ponytail: the write must finish inside the I2S DMA buffer (6 x 240 frames = 90 ms) or samples
+// drop; fine for 2 mics (~43 KB/line), check with 4 (~85 KB) and move the write to its own task if not
 void micTask(void *param) {
-  static int32_t raw[MIC_BUSES][2 * MIC_DECIMATE * MIC_CHUNK];  // L,R pairs per bus
-  static int16_t pcm[MIC_FRAME];
-  static unsigned char line[64 + 4 * ((sizeof(pcm) + 2) / 3)];
-  bool live[MICS] = {};
+  static int32_t raw[MIC_BUSES][2 * MIC_CHUNK];  // L,R pairs per bus
+  static int16_t pcm[MICS][MIC_FRAME];
+  static unsigned char b64[4 * 256 + 1];  // base64 of 768 bytes, written piece by piece
   for (;;) {
     float sum[MICS] = {}, sumSq[MICS] = {};
     for (int out = 0; out < MIC_FRAME;) {
       int n = min(MIC_CHUNK, MIC_FRAME - out);
-      size_t want = 2 * MIC_DECIMATE * n * sizeof(int32_t);
+      size_t want = 2 * n * sizeof(int32_t);
       for (int b = 0; b < MIC_BUSES; b++) {
         if (!micBusOk[b]) continue;
         for (size_t got = 0; got < want;) {
@@ -184,35 +183,33 @@ void micTask(void *param) {
           got += r;
         }
       }
-      int nLive = 0;
-      for (int m = 0; m < MICS; m++) nLive += live[m];
-      for (int i = 0; i < n; i++) {
-        int32_t mix = 0;
+      for (int i = 0; i < n; i++, out++) {
         for (int m = 0; m < MICS; m++) {
-          if (!micBusOk[m / 2]) continue;
-          int32_t s = 0;  // 24-bit sample in the top of each 32-bit slot
-          for (int k = 0; k < MIC_DECIMATE; k++) s += raw[m / 2][2 * (MIC_DECIMATE * i + k) + m % 2] >> 16;
-          s /= MIC_DECIMATE;
+          int16_t s = micBusOk[m / 2] ? raw[m / 2][2 * i + m % 2] >> 16 : 0;  // top 16 of 24 bits
+          pcm[m][out] = s;
           sum[m] += s;
           sumSq[m] += (float)s * s;
-          if (live[m]) mix += s;
         }
-        pcm[out++] = nLive ? mix / nLive : 0;
       }
     }
     int lvl[MICS];
+    xSemaphoreTake(serialLock, portMAX_DELAY);
+    Serial.write("{\"mic\":[");
     for (int m = 0; m < MICS; m++) {
       float mean = sum[m] / MIC_FRAME;
       lvl[m] = sqrtf(max(0.0f, sumSq[m] / MIC_FRAME - mean * mean));
-      live[m] = lvl[m] >= MIC_LIVE_MIN && lvl[m] <= MIC_LIVE_MAX;
+      Serial.write(m ? ",\"" : "\"");
+      if (lvl[m] >= MIC_LIVE_MIN && lvl[m] <= MIC_LIVE_MAX) {
+        for (size_t at = 0; at < sizeof(pcm[m]); at += 768) {  // 768: whole base64 groups
+          size_t n = 0;
+          mbedtls_base64_encode(b64, sizeof(b64), &n, (unsigned char *)pcm[m] + at,
+                                min(sizeof(pcm[m]) - at, (size_t)768));
+          Serial.write(b64, n);
+        }
+      }
+      Serial.write("\"");
     }
-    size_t n = 0;
-    memcpy(line, "{\"mic\":\"", 8);
-    mbedtls_base64_encode(line + 8, sizeof(line) - 8, &n, (unsigned char *)pcm, sizeof(pcm));
-    n += 8;
-    n += snprintf((char *)line + n, sizeof(line) - n, "\",\"lvl\":[%d,%d,%d,%d]}\n", lvl[0], lvl[1], lvl[2], lvl[3]);
-    xSemaphoreTake(serialLock, portMAX_DELAY);
-    Serial.write(line, n);
+    Serial.printf("],\"lvl\":[%d,%d,%d,%d]}\n", lvl[0], lvl[1], lvl[2], lvl[3]);
     xSemaphoreGive(serialLock);
   }
 }
@@ -388,7 +385,7 @@ void printerTask(void *param) {
 }
 
 void initializeSerial() {
-  Serial.setTxBufferSize(16384);  // the mic stream (~43 KB/s) stalls on the default 256 B
+  Serial.setTxBufferSize(16384);  // the mic stream (~43 KB/s per mic) stalls on the default 256 B
   Serial.begin(115200);
   Serial1.begin(115200, SERIAL_8N1, SERIAL1_RX_PIN, SERIAL1_TX_PIN);
 }
@@ -415,7 +412,7 @@ void setup() {
 
   for (int b = 0; b < MIC_BUSES; b++) {
     i2s[b].setPins(MIC_SCK_PINS[b], MIC_WS_PINS[b], -1, MIC_SD_PINS[b]);
-    micBusOk[b] = i2s[b].begin(I2S_MODE_STD, MIC_I2S_RATE, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH);
+    micBusOk[b] = i2s[b].begin(I2S_MODE_STD, MIC_RATE, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH);
     if (micBusOk[b])
       gpio_pulldown_en((gpio_num_t)MIC_SD_PINS[b]);  // an empty slot reads 0, not floating noise
     else

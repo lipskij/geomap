@@ -1,7 +1,7 @@
-"""Record the ESP32 mic mix from the running rid server (/v1/mic) to a WAV file.
+"""Record the ESP32 mics from the running rid server (/v1/mic) to a MICS-channel WAV file.
 
-Prints each 0.5 s line's level and the drone check's best result while it records, so you can
-see what the server hears. Token and port come from ./env, like the service.
+Prints each 0.5 s line's level and drone check per live mic while it records ("*" marks the one
+the alarm used), so you can see what the server hears. Token and port come from ./env, like the service.
 
 Run:  python3 mic_rec.py [seconds] [file.wav]    (no seconds: until Ctrl-C;
                                                   default file: rec/<date-time>.wav)
@@ -21,12 +21,14 @@ for line in open(os.path.join(HERE, "env")):
 
 from websockets.asyncio.client import connect  # noqa: E402
 
-from rid_server import MIC_RATE, PORT, TOKEN, hum  # noqa: E402
+import numpy as np  # noqa: E402
+
+from rid_server import MIC_RATE, MICS, PORT, TOKEN, hum  # noqa: E402
 
 
 async def record(seconds, path):
     with wave.open(path, "wb") as w:
-        w.setnchannels(1)
+        w.setnchannels(MICS)
         w.setsampwidth(2)
         w.setframerate(MIC_RATE)
         async with connect(f"ws://localhost:{PORT}/v1/mic?token={TOKEN}") as ws:
@@ -35,10 +37,15 @@ async def record(seconds, path):
             while not seconds or got < seconds * MIC_RATE:
                 pcm = await asyncio.wait_for(ws.recv(), 5)  # ESP32 sends every 0.5 s
                 w.writeframes(pcm)
-                got += len(pcm) // 2
-                f0, conf, ok, rms = max(hum(pcm), key=lambda r: r[1])
-                print(f"{got / MIC_RATE:6.1f} s  rms {rms:6.0f}  {f0:5.0f} Hz  conf {conf:.2f}"
-                      + ("  hum" if ok else ""), flush=True)
+                x = np.frombuffer(pcm, np.int16).reshape(-1, MICS)
+                got += len(x)
+                best = {m: max(hum(x[:, m].tobytes()), key=lambda r: (r[2], r[1]))
+                        for m in range(MICS) if x[:, m].any()}
+                top = max(best, key=lambda m: (best[m][2], best[m][1]), default=None)
+                print(f"{got / MIC_RATE:6.1f} s" + "".join(
+                    f"  |{'*' if m == top else ' '}mic{m + 1} rms {rms:5.0f} {f0:5.0f} Hz conf {conf:.2f}"
+                    + (" hum" if ok else "    ") for m, (f0, conf, ok, rms) in best.items())
+                    or "  no live mic", flush=True)
 
 
 def main():

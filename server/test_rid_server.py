@@ -3,7 +3,7 @@ import tempfile
 
 os.environ.setdefault("RID_TOKEN", "test")
 os.environ["RID_LOG"] = tempfile.mkdtemp()
-from rid_server import CLOSE_S, CONF_OFF, LOG, MIC_FRAME, MIC_RATE, RMS_MIN, Ears, Tracks, delete_history, history, hum, jpegs, log_file, log_packet, prune
+from rid_server import CLOSE_S, CONF_OFF, LOG, MIC_FRAME, MIC_RATE, MICS, RMS_MIN, Ears, Tracks, channels, delete_history, hear, history, hum, jpegs, log_file, log_packet, prune
 
 p = {"basic_id": "D1", "mac": "aa", "rssi": -70, "drone_lat": 54.7, "drone_long": 25.29,
      "drone_altitude": 50, "pilot_lat": 54.7, "pilot_long": 25.29}
@@ -63,6 +63,12 @@ assert hum(b"") == []
 frames = hum(pcm(noise + 1500 * np.sin(2 * np.pi * 300 * sec) + 4000 * np.sin(2 * np.pi * 600 * sec)
                  + 1500 * np.sin(2 * np.pi * 900 * sec)))
 assert all(ok and abs(f0 - 300) <= 16 for f0, _, ok, _ in frames), frames
+# Several mics: any one hearing the drone is enough, empty slots are skipped, none = silence
+drone = pcm(noise + sum(4000 / k * np.sin(2 * np.pi * 300 * k * sec) for k in (1, 2, 3)))
+assert all(ok for _, _, ok, _ in hear([pcm(noise), b"", drone, b""]))
+assert [rms for *_, rms in hear([b"", b""])] == [0, 0, 0]
+x = np.frombuffer(channels([b"", drone]), np.int16).reshape(MIC_FRAME, MICS)
+assert not x[:, 0].any() and x[:, 1].tobytes() == drone and not x[:, 2:].any()
 # Alarm smoothing: the EMA reaches 0.30 on the 2nd good frame, 2 good frames in a row at 0.30 raise
 # it; 8 bad clear it
 e = Ears("pi-01")
@@ -78,8 +84,12 @@ assert all(e.check(*bad, 11.5) == [] for _ in range(7))
 assert [m["type"] for m in e.check(*bad, 11.5)] == ["track.lost"]  # 8th bad in a row
 assert e.check(300, 1.0, True, RMS_MIN / 2, 12) == []  # quiet frames never raise it
 assert [e.check(*good, 20) for _ in range(2)] == [[], []]
-assert [m["type"] for m in e.check(*good, 20)] == ["track.closed", "track.created", "contact.alert"]
-assert e.pub["track_id"] != first and e.snapshot() == [e.pub]
+assert [m["type"] for m in e.check(*good, 20)] == ["track.updated"]  # back before closed: no new alert
+assert e.pub["track_id"] == first and e.pub["state"] == "active" and e.snapshot() == [e.pub]
 assert e.tick(21) == [] and [m["type"] for m in e.tick(22.5)] == ["track.lost"]  # ESP32 went quiet
 assert [m["type"] for m in e.tick(20 + CLOSE_S)] == ["track.closed"] and e.snapshot() == []
+assert all(e.check(300, 1.0, True, 0, 199) == [] for _ in range(20))  # silence decays the EMA
+assert [e.check(*good, 200) for _ in range(2)] == [[], []]
+assert [m["type"] for m in e.check(*good, 200)] == ["track.created", "contact.alert"]  # after closed: new
+assert e.pub["track_id"] != first
 print("ok")

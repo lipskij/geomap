@@ -19,12 +19,13 @@ login as /v1/live. rpicam-vid runs only while someone watches; each viewer answe
 frame with any message and gets at most CAM_IN_FLIGHT unanswered, so a slow link drops
 frames instead of falling behind.
 
-The ESP32 also streams its INMP441 mic as {"mic": "<base64 16-bit PCM, 16 kHz>"} lines, one
-per 0.5 s (see firmware/). An FFT check listens for a drone-like hum (a tone plus its 2nd
-and 3rd harmonics) and reports it as a contact track heard by this node, no direction.
+The ESP32 also streams its INMP441 mics as {"mic": ["<base64 16-bit PCM, 16 kHz>", "" ...]}
+lines, one per 0.5 s, "" for an empty slot (see firmware/). An FFT check listens to each mic
+for a drone-like hum (a tone plus its 2nd and 3rd harmonics) and reports it as a contact track
+heard by this node, no direction, when any mic hears it.
 RID_MIC_CONF (default 0.30) is the smoothed confidence that raises it;
 RID_MIC_LOG=1 prints every check's result, for tuning. /v1/mic streams the raw PCM, one binary
-message per line, same login as /v1/live (mic_rec.py records it).
+message per line, MICS channels interleaved, same login as /v1/live (mic_rec.py records it).
 
 Run:  RID_TOKEN=... python3 rid_server.py            (reads RID_SERIAL)
       RID_TOKEN=... python3 rid_server.py - < lines   (reads stdin)
@@ -79,6 +80,7 @@ CAM_IN_FLIGHT = 2  # frames sent but not yet answered, per viewer
 MIC_LOG = os.environ.get("RID_MIC_LOG") == "1"
 MIC_RATE = 16000  # must match the firmware
 MIC_FRAME = MIC_RATE // 2  # samples per mic line: 0.5 s
+MICS = 4  # mic slots per line, like the firmware
 # Drone check and alarm smoothing ported from batear (github.com/batear-io/batear, MIT).
 # Its 1024-point frames, one per ~167 ms like its 64 ms frame + 100 ms hop, so its
 # thresholds and timings carry over unchanged
@@ -226,10 +228,30 @@ def _harmonics(psd, floor, k):
     return ok, float(min(0.99, min(1.0, snr / 40) * max(h2 / MIN_H2, h3 / MIN_H3))), k
 
 
+def hear(pcms):
+    """hum() of each mic's PCM (b"" = empty slot), best per frame: harmonics ok first, then
+    confidence. Like batear's one-mic detectors side by side; an average of mics at different
+    distances cancels the harmonics. No live mic: silent frames, so the alarm still decays."""
+    live = [m for m in pcms if m] or [bytes(2 * MIC_FRAME)]
+    return [max(f, key=lambda r: (r[2], r[1])) for f in zip(*map(hum, live))]
+
+
+def channels(pcms):
+    """The mics as one MICS-channel interleaved 16-bit PCM block, empty slots silent (/v1/mic)."""
+    import numpy as np
+
+    out = np.zeros((MIC_FRAME, MICS), np.int16)
+    for i, m in enumerate(pcms[:MICS]):
+        if m:
+            out[:, i] = np.frombuffer(m, np.int16)  # ValueError on a cut-off frame
+    return out.tobytes()
+
+
 class Ears:
     """The mic's one contact track, with batear's alarm smoothing: a confidence EMA raises it
     after SUSTAIN_ON good frames in a row at CONF_ON, and SUSTAIN_OFF bad ones (or SOUND_LOST_S
-    without frames) mark it lost; CLOSE_S lost -> closed. Heard again after lost = new track_id.
+    without frames) mark it lost; CLOSE_S lost -> closed. Heard again before closed = same track,
+    no new alert (a distant drone drops in and out); after closed = new track_id and alert.
     Good = harmonics ok. No steady-pitch check: a multirotor's f0 hops between its motors."""
 
     def __init__(self, node_id):
@@ -253,13 +275,15 @@ class Ears:
             if self.on < SUSTAIN_ON:
                 return []
             self.on = self.off = 0
-            out = [{"type": "track.closed", "data": {"track_id": self.pub["track_id"]}}] if self.pub else []
+            self.sent = now
+            if self.pub:  # lost but not closed: the same drone back, no second alert
+                self._heard(f0, now)
+                return [{"type": "track.updated", "data": self.pub}]
             self.pub = {"track_id": f"sound-{self.node_id}-{int(now)}", "kind": "contact",
                         "audio_confirmed": True}
             self._heard(f0, now)
-            self.sent = now
-            return out + [{"type": "track.created", "data": self.pub},
-                          {"type": "contact.alert", "data": self.pub}]
+            return [{"type": "track.created", "data": self.pub},
+                    {"type": "contact.alert", "data": self.pub}]
         if not loud or not ok or self.ema < CONF_OFF:
             self.off += 1
             if self.off < SUSTAIN_OFF:
@@ -543,11 +567,13 @@ async def main(src):
                 continue  # boot logs and other non-JSON chatter
             if isinstance(p, dict) and "mic" in p:
                 try:
-                    pcm = base64.b64decode(p["mic"])
-                    frames = hum(pcm)
+                    mic = p["mic"]
+                    pcms = [base64.b64decode(m) for m in (mic if isinstance(mic, list) else [mic])]
+                    frames = hear(pcms)
+                    multi = channels(pcms)
                 except (TypeError, ValueError):  # cut-off line: odd byte count or bad base64
                     continue
-                broadcast(listeners, pcm)
+                broadcast(listeners, multi)
                 now = time.time()
                 for f0, conf, ok, rms in frames:
                     send(ears.check(f0, conf, ok, rms, now))
