@@ -63,11 +63,20 @@ const tracks = new Map<string, LiveTrack>();
 const nodes = new Map<string, LiveNode>();
 const nodeIds = new Map<string, number>(); // node_id -> numeric sensor id, stable per session
 const alertHandlers: ((t: LiveTrack) => void)[] = [];
+const alerted = new Set<string>(); // contact track_ids already alerted this session
 let ws: WebSocket | undefined;
 let retry: ReturnType<typeof setTimeout> | undefined;
 let failures = 0; // connects in a row that never opened
 
 export const onContactAlert = (fn: (t: LiveTrack) => void) => alertHandlers.push(fn);
+
+// Once per contact track, the first time we see it active: its contact.alert, or a snapshot or
+// update when we connected after that went out
+function alert(t: LiveTrack) {
+  if (alerted.has(t.track_id)) return;
+  alerted.add(t.track_id);
+  for (const fn of alertHandlers) fn(t);
+}
 
 const sensorId = (nodeId: string) => {
   if (!nodeIds.has(nodeId)) nodeIds.set(nodeId, 1001 + nodeIds.size);
@@ -111,7 +120,10 @@ function handle(m: { type: string; data?: any; tracks?: LiveTrack[]; nodes?: Liv
     case "snapshot":
       tracks.clear();
       nodes.clear();
-      for (const t of m.tracks ?? []) tracks.set(t.track_id, t);
+      for (const t of m.tracks ?? []) {
+        tracks.set(t.track_id, t);
+        if (t.kind === "contact" && t.state === "active") alert(t);
+      }
       for (const n of m.nodes ?? []) nodes.set(n.node_id, n);
       publishNodes();
       break;
@@ -119,13 +131,14 @@ function handle(m: { type: string; data?: any; tracks?: LiveTrack[]; nodes?: Liv
     case "track.updated":
     case "track.lost": // merged: in case a lost message carries only the changed fields
       tracks.set(m.data.track_id, { ...tracks.get(m.data.track_id), ...m.data });
+      if (m.data.kind === "contact" && m.data.state === "active") alert(m.data);
       publishNodes(); // a node with a fake position may have just appeared
       break;
     case "track.closed":
       tracks.delete(m.data.track_id);
       break;
     case "contact.alert": // also arrives as track.created, so tracks need nothing here
-      for (const fn of alertHandlers) fn(m.data);
+      alert(m.data);
       break;
     case "history.deleted":
       pendingDelete?.resolve(m.data.ids);
