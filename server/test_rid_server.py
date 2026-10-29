@@ -63,13 +63,11 @@ assert hum(b"") == []
 frames = hum(pcm(noise + 1500 * np.sin(2 * np.pi * 300 * sec) + 4000 * np.sin(2 * np.pi * 600 * sec)
                  + 1500 * np.sin(2 * np.pi * 900 * sec)))
 assert all(ok and abs(f0 - 300) <= 16 for f0, _, ok, _ in frames), frames
-# Alarm smoothing: the 1st frame has no pitch to compare, then the EMA reaches 0.30 and 2 good
-# frames in a row raise it; 8 bad clear it; a gliding pitch (speech) never raises it
+# Alarm smoothing: the EMA reaches 0.30 on the 2nd good frame, 2 good frames in a row at 0.30 raise
+# it; 8 bad clear it
 e = Ears("pi-01")
 good, bad = (300, 1.0, True, 500), (300, 0.0, False, 500)
-glide = Ears("x")
-assert all(glide.check(300 * 1.1 ** i, 1.0, True, 500, 5) == [] for i in range(12))  # +10% a frame
-assert [e.check(*good, 10) for _ in range(3)] == [[], [], []] and e.tick(10) == []
+assert [e.check(*good, 10) for _ in range(2)] == [[], []] and e.tick(10) == []
 assert [m["type"] for m in e.check(*good, 10)] == ["track.created", "contact.alert"]
 first = e.pub["track_id"]
 assert e.pub["latest"] == {"node_id": "pi-01", "bearing_deg": None, "classes": ["drone?", "300 Hz"]}

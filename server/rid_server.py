@@ -23,7 +23,8 @@ The ESP32 also streams its INMP441 mic as {"mic": "<base64 16-bit PCM, 16 kHz>"}
 per 0.5 s (see firmware/). An FFT check listens for a drone-like hum (a tone plus its 2nd
 and 3rd harmonics) and reports it as a contact track heard by this node, no direction.
 RID_MIC_CONF (default 0.30) is the smoothed confidence that raises it;
-RID_MIC_LOG=1 prints every check's result, for tuning.
+RID_MIC_LOG=1 prints every check's result, for tuning. /v1/mic streams the raw PCM, one binary
+message per line, same login as /v1/live (mic_rec.py records it).
 
 Run:  RID_TOKEN=... python3 rid_server.py            (reads RID_SERIAL)
       RID_TOKEN=... python3 rid_server.py - < lines   (reads stdin)
@@ -91,7 +92,6 @@ EMA_ALPHA = 0.25
 CONF_ON = float(os.environ.get("RID_MIC_CONF", "0.30"))
 CONF_OFF = CONF_ON * 0.6  # batear: 0.30 on, 0.18 off
 SUSTAIN_ON, SUSTAIN_OFF = 2, 8  # frames in a row to raise / clear the contact
-PITCH_TOL = 0.05  # ours, not batear's: f0 within 5% of the last frame, a drone holds it, speech glides
 SOUND_LOST_S = 2  # no mic frames this long (ESP32 quiet): contact lost
 
 
@@ -230,7 +230,7 @@ class Ears:
     """The mic's one contact track, with batear's alarm smoothing: a confidence EMA raises it
     after SUSTAIN_ON good frames in a row at CONF_ON, and SUSTAIN_OFF bad ones (or SOUND_LOST_S
     without frames) mark it lost; CLOSE_S lost -> closed. Heard again after lost = new track_id.
-    Good = harmonics ok at a steady pitch (PITCH_TOL)."""
+    Good = harmonics ok. No steady-pitch check: a multirotor's f0 hops between its motors."""
 
     def __init__(self, node_id):
         self.node_id = node_id
@@ -238,14 +238,11 @@ class Ears:
         self.heard = self.sent = 0
         self.ema = 0.0
         self.on = self.off = 0  # good / bad frames in a row
-        self.f0 = 0  # last frame's pitch
 
     def snapshot(self):
         return [self.pub] if self.pub else []
 
     def check(self, f0, conf, ok, rms, now):
-        ok = ok and abs(f0 - self.f0) <= max(PITCH_TOL * f0, 1.5 * MIC_RATE / FFT_N)  # ±1.5 bins at least
-        self.f0 = f0
         loud = rms >= RMS_MIN
         if loud:
             self.ema = EMA_ALPHA * (conf if ok else min(conf, 0.15)) + (1 - EMA_ALPHA) * self.ema
@@ -418,6 +415,7 @@ async def main(src):
     print(f"camera: {'found' if NODE['camera'] else 'none'}", flush=True)
     ears = Ears(NODE["node_id"])
     viewers = {}  # camera socket -> frames sent but not answered
+    listeners = set()  # /v1/mic sockets
     cam_task = None
 
     async def camera():
@@ -460,9 +458,9 @@ async def main(src):
             if not await asyncio.to_thread(access_ok, request.headers.get("Cf-Access-Jwt-Assertion")):
                 return conn.respond(403, "bad token\n")
             # Login cookie: refuse sockets other sites open with it (they could delete logs, watch the camera)
-            if url.path in ("/v1/live", "/v1/camera") and (not ORIGIN or request.headers.get("Origin") != ORIGIN):
+            if url.path in ("/v1/live", "/v1/camera", "/v1/mic") and (not ORIGIN or request.headers.get("Origin") != ORIGIN):
                 return conn.respond(403, "bad origin\n")
-        if url.path == "/v1/live" or (url.path == "/v1/camera" and NODE["camera"]):
+        if url.path in ("/v1/live", "/v1/mic") or (url.path == "/v1/camera" and NODE["camera"]):
             return None
         if url.path == "/v1/history":
             return respond(json.dumps(history()).encode(), "application/json")
@@ -474,6 +472,13 @@ async def main(src):
 
     async def handler(conn):
         nonlocal cam_task
+        if conn.request.path.startswith("/v1/mic"):
+            listeners.add(conn)
+            try:
+                await conn.wait_closed()
+            finally:
+                listeners.discard(conn)
+            return
         if conn.request.path.startswith("/v1/camera"):
             viewers[conn] = 0
             if not cam_task or cam_task.done():
@@ -489,6 +494,7 @@ async def main(src):
         await conn.send(json.dumps({"type": "snapshot", "tracks": tracks.snapshot() + ears.snapshot(),
                                     "nodes": NODES}))
         clients.add(conn)
+        print(f"live: client connected ({len(clients)} open)", flush=True)
         try:
             async for msg in conn:
                 try:
@@ -499,10 +505,21 @@ async def main(src):
                     ids = delete_history(m["ids"])
                     print(f"history deleted: {ids}", flush=True)
                     await conn.send(json.dumps({"type": "history.deleted", "data": {"ids": ids}}))
+                elif isinstance(m, dict) and m.get("type") == "contact.test":  # alert_test.py: check the app's toast
+                    # Same messages as a real detection (Ears): created + alert, lost 2 s later, then closed
+                    now = time.time()
+                    pub = {"track_id": f"sound-test-{int(now)}", "kind": "contact", "audio_confirmed": True,
+                           "state": "active", "last_seen": iso(now),
+                           "latest": {"node_id": NODE["node_id"], "bearing_deg": None, "classes": ["test alert"]}}
+                    send([{"type": "track.created", "data": pub}, {"type": "contact.alert", "data": pub}])
+                    loop = asyncio.get_running_loop()
+                    loop.call_later(2, send, [{"type": "track.lost", "data": {**pub, "state": "lost"}}])
+                    loop.call_later(10, send, [{"type": "track.closed", "data": {"track_id": pub["track_id"]}}])
         except ConnectionClosed:
             pass
         finally:
             clients.discard(conn)
+            print(f"live: client gone ({len(clients)} open)", flush=True)
 
     async def ticker():
         pruned = 0
@@ -526,9 +543,11 @@ async def main(src):
                 continue  # boot logs and other non-JSON chatter
             if isinstance(p, dict) and "mic" in p:
                 try:
-                    frames = hum(base64.b64decode(p["mic"]))
+                    pcm = base64.b64decode(p["mic"])
+                    frames = hum(pcm)
                 except (TypeError, ValueError):  # cut-off line: odd byte count or bad base64
                     continue
+                broadcast(listeners, pcm)
                 now = time.time()
                 for f0, conf, ok, rms in frames:
                     send(ears.check(f0, conf, ok, rms, now))

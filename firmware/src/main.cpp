@@ -23,16 +23,27 @@
 const int SERIAL1_RX_PIN = 6;
 const int SERIAL1_TX_PIN = 5;
 
-// INMP441: SCK on D0, WS on D1, SD on D8; L/R to GND = left slot
-const int MIC_SCK_PIN = 1;
-const int MIC_WS_PIN = 2;
-const int MIC_SD_PIN = 7;
-const int MIC_I2S_RATE = 48000;  // 3.072 MHz SCK: some INMP441 boards send garbage at 1 MHz
+// Up to 4 INMP441s on two I2S buses, two mics per bus sharing SCK/WS/SD:
+//   bus 0: SCK D0, WS D1, SD D8  -> mic 1 (L/R to GND), mic 2 (L/R to 3.3V)
+//   bus 1: SCK D2, WS D3, SD D9  -> mic 3 (L/R to GND), mic 4 (L/R to 3.3V)
+// Missing mics are fine: their slot reads flat and is left out of the mix.
+const int MIC_BUSES = 2;
+const int MIC_SCK_PINS[MIC_BUSES] = {1, 3};
+const int MIC_WS_PINS[MIC_BUSES] = {2, 4};
+const int MIC_SD_PINS[MIC_BUSES] = {7, 8};
+const int MICS = 2 * MIC_BUSES;
+// 16 kHz like batear: the INMP441's own decimation filter then cuts everything above 8 kHz.
+// At 48 kHz our 3-sample average let 8-24 kHz whine alias into the drone band.
+const int MIC_I2S_RATE = 16000;
 const int MIC_RATE = 16000;  // sent to the Pi; must match server/rid_server.py
 const int MIC_DECIMATE = MIC_I2S_RATE / MIC_RATE;
 const int MIC_FRAME = MIC_RATE / 2;  // samples per line = 0.5 s
 const int MIC_CHUNK = 256;  // output samples per I2S read
-I2SClass i2s;
+// A mic is mixed in while its last frame's RMS (16-bit units, DC removed) is in this range:
+// below is an empty slot, above is the full-scale noise of a miswired one (two mics on one slot)
+const float MIC_LIVE_MIN = 4, MIC_LIVE_MAX = 12000;
+I2SClass i2s[MIC_BUSES];
+static bool micBusOk[MIC_BUSES];
 static SemaphoreHandle_t serialLock;  // mic and Remote ID lines come from different tasks
 
 struct id_data {
@@ -150,34 +161,58 @@ void send_json_fast(const id_data *UAV) {
   xSemaphoreGive(serialLock);
 }
 
-// Streams the mic to the Pi as {"mic":"<base64 16-bit LE PCM, 16 kHz>"} lines, one per 0.5 s.
-// Read as stereo and keep the left slot (L/R to GND): S3 mono RX can return all zeros (batear).
+// Streams the mics to the Pi as {"mic":"<base64 16-bit LE PCM, 16 kHz>","lvl":[rms x4]} lines,
+// one per 0.5 s. "mic" is the average of the live mics; "lvl" is each mic's RMS, for wiring checks.
+// Each bus is read as stereo: S3 mono RX can return all zeros (batear).
 // ponytail: averaging MIC_DECIMATE samples is a weak anti-alias filter; enough for a <8 kHz drone check
+// ponytail: liveness lags one frame, so a mic joins or leaves the mix 0.5 s late
 void micTask(void *param) {
-  static int32_t raw[2 * MIC_DECIMATE * MIC_CHUNK];  // L,R pairs
+  static int32_t raw[MIC_BUSES][2 * MIC_DECIMATE * MIC_CHUNK];  // L,R pairs per bus
   static int16_t pcm[MIC_FRAME];
-  static unsigned char line[16 + 4 * ((sizeof(pcm) + 2) / 3)];
+  static unsigned char line[64 + 4 * ((sizeof(pcm) + 2) / 3)];
+  bool live[MICS] = {};
   for (;;) {
+    float sum[MICS] = {}, sumSq[MICS] = {};
     for (int out = 0; out < MIC_FRAME;) {
       int n = min(MIC_CHUNK, MIC_FRAME - out);
-      size_t want = 2 * MIC_DECIMATE * n * sizeof(int32_t), got = 0;
-      while (got < want) {
-        size_t r = i2s.readBytes((char *)raw + got, want - got);
-        if (r == 0) delay(10);  // driver error: don't spin
-        got += r;
+      size_t want = 2 * MIC_DECIMATE * n * sizeof(int32_t);
+      for (int b = 0; b < MIC_BUSES; b++) {
+        if (!micBusOk[b]) continue;
+        for (size_t got = 0; got < want;) {
+          size_t r = i2s[b].readBytes((char *)raw[b] + got, want - got);
+          if (r == 0) delay(10);  // driver error: don't spin
+          got += r;
+        }
       }
-      for (int i = 0; i < n; i++) {  // 24-bit sample in the top of each 32-bit slot
-        int32_t sum = 0;
-        for (int k = 0; k < MIC_DECIMATE; k++) sum += raw[2 * (MIC_DECIMATE * i + k)] >> 16;
-        pcm[out++] = sum / MIC_DECIMATE;
+      int nLive = 0;
+      for (int m = 0; m < MICS; m++) nLive += live[m];
+      for (int i = 0; i < n; i++) {
+        int32_t mix = 0;
+        for (int m = 0; m < MICS; m++) {
+          if (!micBusOk[m / 2]) continue;
+          int32_t s = 0;  // 24-bit sample in the top of each 32-bit slot
+          for (int k = 0; k < MIC_DECIMATE; k++) s += raw[m / 2][2 * (MIC_DECIMATE * i + k) + m % 2] >> 16;
+          s /= MIC_DECIMATE;
+          sum[m] += s;
+          sumSq[m] += (float)s * s;
+          if (live[m]) mix += s;
+        }
+        pcm[out++] = nLive ? mix / nLive : 0;
       }
+    }
+    int lvl[MICS];
+    for (int m = 0; m < MICS; m++) {
+      float mean = sum[m] / MIC_FRAME;
+      lvl[m] = sqrtf(max(0.0f, sumSq[m] / MIC_FRAME - mean * mean));
+      live[m] = lvl[m] >= MIC_LIVE_MIN && lvl[m] <= MIC_LIVE_MAX;
     }
     size_t n = 0;
     memcpy(line, "{\"mic\":\"", 8);
     mbedtls_base64_encode(line + 8, sizeof(line) - 8, &n, (unsigned char *)pcm, sizeof(pcm));
-    memcpy(line + 8 + n, "\"}\n", 3);
+    n += 8;
+    n += snprintf((char *)line + n, sizeof(line) - n, "\",\"lvl\":[%d,%d,%d,%d]}\n", lvl[0], lvl[1], lvl[2], lvl[3]);
     xSemaphoreTake(serialLock, portMAX_DELAY);
-    Serial.write(line, 8 + n + 3);
+    Serial.write(line, n);
     xSemaphoreGive(serialLock);
   }
 }
@@ -378,11 +413,16 @@ void setup() {
   printQueue = xQueueCreate(MAX_UAVS, sizeof(id_data));
   serialLock = xSemaphoreCreateMutex();
 
-  i2s.setPins(MIC_SCK_PIN, MIC_WS_PIN, -1, MIC_SD_PIN);
-  if (i2s.begin(I2S_MODE_STD, MIC_I2S_RATE, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH))
+  for (int b = 0; b < MIC_BUSES; b++) {
+    i2s[b].setPins(MIC_SCK_PINS[b], MIC_WS_PINS[b], -1, MIC_SD_PINS[b]);
+    micBusOk[b] = i2s[b].begin(I2S_MODE_STD, MIC_I2S_RATE, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH);
+    if (micBusOk[b])
+      gpio_pulldown_en((gpio_num_t)MIC_SD_PINS[b]);  // an empty slot reads 0, not floating noise
+    else
+      Serial.printf("   [!] INMP441 bus %d init failed\n", b);
+  }
+  if (micBusOk[0] || micBusOk[1])
     xTaskCreatePinnedToCore(micTask, "MicTask", 4096, NULL, 1, NULL, 0);
-  else
-    Serial.println("   [!] INMP441 init failed");
   
   xTaskCreatePinnedToCore(bleScanTask, "BLEScanTask", 10000, NULL, 1, NULL, 1);
   xTaskCreatePinnedToCore(wifiProcessTask, "WiFiProcessTask", 10000, NULL, 1, NULL, 0);
