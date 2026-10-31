@@ -8,9 +8,7 @@ import { distanceM, fmtPos, validPos } from "../geo";
 import { FADE_SECONDS, GAP_SECONDS, JUMP_M, MAX_ALT_M, STALE_SECONDS } from "../config";
 import { REPLAY_PREFIX } from "../composables/useReplay";
 import type { Restriction, Zone, ZoneCheck } from "../zones";
-import { mastOf, rangeOf, SENSOR_TYPES, type Sensor, type SensorType } from "../composables/useSensors";
-import { overlapImage } from "../coverage";
-import { elevation, loadTerrain } from "../terrain";
+import { rangeOf, SENSOR_TYPES, type Sensor } from "../composables/useSensors";
 import { lang, t, type MsgKey } from "../i18n";
 import { ICONS, type IconName } from "../icons";
 import { offset, type AcousticTrack } from "../acoustic";
@@ -27,19 +25,13 @@ const props = defineProps<{
   base: BaseLayer;
   showZones: boolean;
   sensors: Sensor[];
-  planning: boolean; // planner mode: sensors can be dropped, placed and dragged
-  showSensors: boolean; // sensor markers + coverage circles (planner, detection)
+  showSensors: boolean; // sensor markers + coverage circles
   selectedSensor: number | null; // highlighted marker and circle
-  placing: SensorType | null; // type picked in the planner; next map click places it
-  overlap: SensorType | "all" | null; // shade where these sensors' ranges overlap; null = off
-  showDrones: boolean; // false hides drone markers and paths (they keep updating)
   acoustic: AcousticTrack | null; // drone located by crossing acoustic bearings
   acousticSensors: Sensor[]; // the sensors its bearings come from
 }>();
 const emit = defineEmits<{
   unfollow: [];
-  addSensor: [type: SensorType, lat: number, lng: number];
-  moveSensor: [id: number, lat: number, lng: number];
   selectSensor: [id: number];
 }>();
 
@@ -66,17 +58,14 @@ let zoomedToFirst = false;
 let moving = false; // true while the map is panning/zooming
 let pending: Detections | null = null; // latest data received mid-move
 let zonesLayer: L.GeoJSON | null = null;
-// Drones and planned sensors get their own panes, so hiding either is one style change
-// (drone paths keep recording while hidden; sensors only show in planner mode)
+// Sensors get their own panes, so hiding them is one style change
 let pathRenderer: L.Renderer | undefined;
 let sensorRenderer: L.Renderer | undefined;
-const DRONE_PANES = ["drones", "dronePaths"];
 const SENSOR_PANES = ["sensors", "sensorAreas"];
 
 function showPanes(panes: string[], on: boolean) {
   if (!map) return;
   for (const pane of panes) map.getPane(pane)!.style.display = on ? "" : "none";
-  if (!on && panes === DRONE_PANES) map.closePopup(); // don't leave a hidden drone's popup open
 }
 
 let baseLayers: Record<BaseLayer, L.TileLayer> | null = null;
@@ -94,49 +83,8 @@ function showZoneLayer(on: boolean) {
 }
 const tracks = new Map<string, Track>();
 
-// Planned sensors: square marker + coverage circle, kept in sync with props.sensors
+// Sensors: square marker + coverage circle, kept in sync with props.sensors
 const sensorLayers = new Map<number, { marker: L.Marker; circle: L.Circle }>();
-let overlapLayer: L.ImageOverlay | null = null;
-
-// Shaded overlap of coverage circles (planner only), redrawn when the plan changes.
-// Terrain is loaded first so hills can cut the coverage
-let overlapRun = 0;
-async function drawOverlap() {
-  const run = ++overlapRun;
-  if (!map || !props.planning || !props.overlap) {
-    overlapLayer?.remove();
-    overlapLayer = null;
-    return;
-  }
-  const pick = props.overlap;
-  const circles = props.sensors
-    // "all": every sensor that can take part in a cross-bearing (Remote ID can't)
-    .filter((s) => (pick === "all" ? SENSOR_TYPES[s.type].bearing : s.type === pick))
-    .map((s) => ({
-      lat: s.lat,
-      lng: s.lng,
-      range: rangeOf(s),
-      mastM: mastOf(s),
-      throughTerrain: !SENSOR_TYPES[s.type].lineOfSight,
-    }));
-  await loadTerrain(
-    circles.map((c) => {
-      const b = L.latLng(c.lat, c.lng).toBounds(c.range * 2);
-      return [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()];
-    }),
-  );
-  if (run !== overlapRun || !map) return; // plan changed while tiles loaded
-  overlapLayer?.remove();
-  overlapLayer = null;
-  const img = overlapImage(circles, elevation);
-  if (!img) return;
-  overlapLayer = L.imageOverlay(img.url, img.bounds, {
-    opacity: 1,
-    interactive: false,
-    pane: "sensorAreas",
-  }).addTo(map);
-  overlapLayer.bringToBack();
-}
 
 function syncSensors() {
   if (!map) return;
@@ -162,16 +110,10 @@ function syncSensors() {
       }).addTo(map);
       const marker = L.marker([s.lat, s.lng], {
         icon: glyphIcon("sensor-marker", SENSOR_TYPES[s.type].color, SENSOR_TYPES[s.type].icon, 30),
-        draggable: true,
         pane: "sensors",
       }).addTo(map);
       const id = s.id;
       marker.on("click", () => emit("selectSensor", id));
-      marker.on("drag", () => circle.setLatLng(marker.getLatLng()));
-      marker.on("dragend", () => {
-        const p = marker.getLatLng();
-        emit("moveSensor", id, p.lat, p.lng);
-      });
       l = { marker, circle };
       sensorLayers.set(s.id, l);
     }
@@ -182,8 +124,6 @@ function syncSensors() {
     l.marker.getElement()?.classList.toggle("offline", !!s.offline);
     l.marker.setZIndexOffset(sel ? 1000 : 0);
     l.circle.setStyle({ weight: sel ? 3 : 1.5, dashArray: sel ? "" : "5,5", fillOpacity: sel ? 0.16 : 0.08 });
-    if (props.planning) l.marker.dragging?.enable();
-    else l.marker.dragging?.disable();
   }
 }
 
@@ -228,19 +168,7 @@ function drawAcoustic(a: AcousticTrack | null) {
     .addTo(acousticLayer);
 }
 
-// Sensor dragged from the planner palette and dropped on the map
-function onDragOver(e: DragEvent) {
-  if (props.planning && e.dataTransfer?.types.includes("text/x-sensor")) e.preventDefault();
-}
-function onDrop(e: DragEvent) {
-  const type = e.dataTransfer?.getData("text/x-sensor") as SensorType;
-  if (!map || !props.planning || !SENSOR_TYPES[type]) return;
-  e.preventDefault();
-  const p = map.mouseEventToLatLng(e);
-  emit("addSensor", type, p.lat, p.lng);
-}
-
-// Show the whole plan, coverage circles included (after importing one)
+// Show all sensors, coverage circles included
 function fitSensors() {
   if (!map || !props.sensors.length) return;
   const b = L.latLngBounds([]);
@@ -645,8 +573,7 @@ onMounted(() => {
   map.createPane("dronePaths").style.zIndex = "420"; // above sensor circles (overlay pane)
   map.createPane("drones").style.zIndex = "610"; // above sensor markers (marker pane)
   pathRenderer = L.svg({ pane: "dronePaths", padding: 2 });
-  showPanes(DRONE_PANES, props.showDrones);
-  map.createPane("sensorAreas").style.zIndex = "410"; // coverage circles + overlap, under drone paths
+  map.createPane("sensorAreas").style.zIndex = "410"; // coverage circles, under drone paths
   map.createPane("sensors").style.zIndex = "605"; // sensor markers, under drone markers
   sensorRenderer = L.svg({ pane: "sensorAreas", padding: 2 });
   showPanes(SENSOR_PANES, props.showSensors);
@@ -667,12 +594,7 @@ onMounted(() => {
   };
   showBase(props.base);
   if (props.zones.length) renderZoneLayer(props.zones);
-  map.on("click", (e) => {
-    if (props.planning && props.placing)
-      emit("addSensor", props.placing, e.latlng.lat, e.latlng.lng);
-  });
   syncSensors();
-  drawOverlap();
   map.on("dragstart", () => {
     if (props.following) emit("unfollow"); // manual pan cancels follow
   });
@@ -698,11 +620,9 @@ watch(() => props.detections, update);
 watch(() => props.zones, renderZoneLayer);
 watch(() => props.base, showBase);
 watch(() => props.showZones, showZoneLayer);
-watch(() => props.showDrones, (on) => showPanes(DRONE_PANES, on));
 watch(() => props.showSensors, (on) => showPanes(SENSOR_PANES, on));
-watch(() => [props.sensors, props.planning, props.selectedSensor], syncSensors, { deep: true });
+watch(() => [props.sensors, props.selectedSensor], syncSensors, { deep: true });
 watch(() => props.acoustic, drawAcoustic);
-watch(() => [props.sensors, props.planning, props.overlap], drawOverlap, { deep: true });
 
 // Leaflet content is plain DOM: relabel it when the language changes
 watch(lang, () => {
@@ -722,13 +642,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div
-    ref="el"
-    class="map"
-    :class="{ placing: planning && placing }"
-    @dragover="onDragOver"
-    @drop="onDrop"
-  />
+  <div ref="el" class="map" />
 </template>
 
 <style scoped>
@@ -774,10 +688,6 @@ onBeforeUnmount(() => {
 :deep(.sensor-marker svg) {
   width: 64%;
   height: 64%;
-}
-.map.placing,
-.map.placing :deep(.leaflet-interactive) {
-  cursor: crosshair;
 }
 :deep(.rid-marker svg) {
   width: 62%;

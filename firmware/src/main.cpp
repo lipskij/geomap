@@ -17,19 +17,23 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
-#include <ESP_I2S.h>
+#include <driver/i2s_std.h>
+#include <driver/gpio_filter.h>
+#include <soc/gpio_periph.h>
 #include <mbedtls/base64.h>
 
 const int SERIAL1_RX_PIN = 6;
 const int SERIAL1_TX_PIN = 5;
 
-// Up to 4 INMP441s on two I2S buses, two mics per bus sharing SCK/WS/SD:
-//   bus 0: SCK D0, WS D1, SD D8  -> mic 1 (L/R to GND), mic 2 (L/R to 3.3V)
-//   bus 1: SCK D2, WS D3, SD D9  -> mic 3 (L/R to GND), mic 4 (L/R to 3.3V)
+// Up to 4 INMP441s, all on one clock (SCK D0, WS D1), two mics per data line:
+//   bus 0: SD D8  -> mic 1 (L/R to GND), mic 2 (L/R to 3.3V)
+//   bus 1: SD D9  -> mic 3 (L/R to GND), mic 4 (L/R to 3.3V)
+// Bus 0 (I2S0) drives the clock; bus 1 (I2S1) is a slave listening to the same pins,
+// so all 4 mics are sampled on the same edge.
 // Missing mics are fine: their slot reads flat and is not sent.
 const int MIC_BUSES = 2;
-const int MIC_SCK_PINS[MIC_BUSES] = {1, 3};
-const int MIC_WS_PINS[MIC_BUSES] = {2, 4};
+const int MIC_SCK_PIN = 1;
+const int MIC_WS_PIN = 2;
 const int MIC_SD_PINS[MIC_BUSES] = {7, 8};
 const int MICS = 2 * MIC_BUSES;
 // 16 kHz like batear: the INMP441's own decimation filter then cuts everything above 8 kHz.
@@ -40,7 +44,7 @@ const int MIC_CHUNK = 256;  // samples per I2S read
 // A mic is sent while its frame's RMS (16-bit units, DC removed) is in this range:
 // below is an empty slot, above is the full-scale noise of a miswired one (two mics on one slot)
 const float MIC_LIVE_MIN = 4, MIC_LIVE_MAX = 12000;
-I2SClass i2s[MIC_BUSES];
+static i2s_chan_handle_t micRx[MIC_BUSES];
 static bool micBusOk[MIC_BUSES];
 static SemaphoreHandle_t serialLock;  // mic and Remote ID lines come from different tasks
 
@@ -178,7 +182,8 @@ void micTask(void *param) {
       for (int b = 0; b < MIC_BUSES; b++) {
         if (!micBusOk[b]) continue;
         for (size_t got = 0; got < want;) {
-          size_t r = i2s[b].readBytes((char *)raw[b] + got, want - got);
+          size_t r = 0;
+          i2s_channel_read(micRx[b], (char *)raw[b] + got, want - got, &r, 1000);
           if (r == 0) delay(10);  // driver error: don't spin
           got += r;
         }
@@ -410,14 +415,40 @@ void setup() {
   printQueue = xQueueCreate(MAX_UAVS, sizeof(id_data));
   serialLock = xSemaphoreCreateMutex();
 
-  for (int b = 0; b < MIC_BUSES; b++) {
-    i2s[b].setPins(MIC_SCK_PINS[b], MIC_WS_PINS[b], -1, MIC_SD_PINS[b]);
-    micBusOk[b] = i2s[b].begin(I2S_MODE_STD, MIC_RATE, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH);
+  // Slave first: its init makes SCK/WS inputs, the master's init then turns them into outputs.
+  for (int b = MIC_BUSES - 1; b >= 0; b--) {
+    i2s_chan_config_t chan = I2S_CHANNEL_DEFAULT_CONFIG(b ? I2S_NUM_1 : I2S_NUM_0, b ? I2S_ROLE_SLAVE : I2S_ROLE_MASTER);
+    i2s_std_config_t std = {
+      .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(MIC_RATE),
+      .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO),
+      .gpio_cfg = {I2S_GPIO_UNUSED, (gpio_num_t)MIC_SCK_PIN, (gpio_num_t)MIC_WS_PIN, I2S_GPIO_UNUSED,
+                   (gpio_num_t)MIC_SD_PINS[b], {}},
+    };
+    // The slave finds SCK edges by sampling it with its own clock (BCLK x bclk_div). At the default
+    // 8 the edge lands late enough to read SD as it changes: mics 3-4 came out with garbled low bits.
+    if (b) std.clk_cfg.bclk_div = 64;
+    micBusOk[b] = i2s_new_channel(&chan, NULL, &micRx[b]) == ESP_OK &&
+                  i2s_channel_init_std_mode(micRx[b], &std) == ESP_OK;
     if (micBusOk[b])
       gpio_pulldown_en((gpio_num_t)MIC_SD_PINS[b]);  // an empty slot reads 0, not floating noise
     else
       Serial.printf("   [!] INMP441 bus %d init failed\n", b);
   }
+  // The master's output setup turned the pads' input buffers off; the slave needs them on to hear
+  // the clock. PIN_INPUT_ENABLE leaves the GPIO matrix routing (master out, slave in) alone.
+  for (int pin : {MIC_SCK_PIN, MIC_WS_PIN}) {
+    PIN_INPUT_ENABLE(GPIO_PIN_MUX_REG[pin]);
+    // Ringing on the wire to 4 mics makes the slave see extra SCK edges (duplicated bits on mics 3-4);
+    // the filter drops pulses shorter than 2 IO_MUX clocks.
+    gpio_pin_glitch_filter_config_t fc = {.clk_src = GLITCH_FILTER_CLK_SRC_DEFAULT, .gpio_num = (gpio_num_t)pin};
+    gpio_glitch_filter_handle_t f;
+    if (gpio_new_pin_glitch_filter(&fc, &f) == ESP_OK)
+      gpio_glitch_filter_enable(f);
+  }
+  micBusOk[1] &= micBusOk[0];  // no master, no clock: the slave would block every read
+  for (int b = MIC_BUSES - 1; b >= 0; b--)  // slave first so it is waiting when the clock starts
+    if (micBusOk[b])
+      micBusOk[b] = i2s_channel_enable(micRx[b]) == ESP_OK;
   if (micBusOk[0] || micBusOk[1])
     xTaskCreatePinnedToCore(micTask, "MicTask", 4096, NULL, 1, NULL, 0);
   

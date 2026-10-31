@@ -1,8 +1,4 @@
-import { ref, watch } from "vue";
 import type { IconName } from "../icons";
-import { loadLocal, savePlan } from "../plans";
-import { SENSOR_MAST_M } from "../coverage";
-import { noiseAt } from "../landuse";
 
 export type SensorType = "rid" | "audio" | "video";
 
@@ -11,124 +7,19 @@ export interface Sensor {
   type: SensorType;
   lat: number;
   lng: number;
-  mastM?: number; // mount height above ground (mast, roof); default SENSOR_MAST_M
-  noise?: Noise; // audio only: background noise set by hand; unset = autoNoise
-  autoNoise?: Noise; // read from the map around it (landuse.ts); not saved in plan files
   name?: string; // backend node id (live feed nodes)
   offline?: boolean; // backend node not reporting
   camera?: boolean; // backend node streams a live camera (watchCamera)
 }
 
-export interface Plan {
-  name: string;
-  sensors: Sensor[];
-}
-
 // ponytail: rough default detection ranges per type; per-sensor values come later
-// with the real sensor list. lineOfSight: hills hide drones from it (sound bends around them).
-// bearing: reports a direction only, so 2+ must cross to place a drone; Remote ID doesn't
-// (the drone broadcasts its own position: one receiver is enough, more are backup)
-export const SENSOR_TYPES: Record<
-  SensorType,
-  { icon: IconName; color: string; range: number; lineOfSight: boolean; bearing: boolean }
-> = {
+// with the real sensor list
+export const SENSOR_TYPES: Record<SensorType, { icon: IconName; color: string; range: number }> = {
   // ESP32-S3 + 12 dBi omni (≈6–8 dBi real) + 200 mm pigtail, drone ≈16 dBm EIRP at 30 m AGL:
   // ≈1.5 km in the open, 0.5–1 km suburban. Check against RSSI from real detections
-  rid: { icon: "sensors", color: "#1f7ae0", range: 1500, lineOfSight: true, bearing: false },
-  audio: { icon: "mic", color: "#8e44ad", range: 300, lineOfSight: false, bearing: true },
-  video: { icon: "videocam", color: "#0f9d8a", range: 800, lineOfSight: true, bearing: true },
+  rid: { icon: "sensors", color: "#1f7ae0", range: 1500 },
+  audio: { icon: "mic", color: "#8e44ad", range: 300 },
+  video: { icon: "videocam", color: "#0f9d8a", range: 800 },
 };
 
-export type Noise = "rural" | "suburban" | "urban";
-// Hearing range of an acoustic sensor by background noise (≈35 / 45 / 60 dB(A)): drone
-// sound fades ~6 dB per doubling of distance, so louder surroundings shrink the range.
-// AI filtering tells drones from other sounds; it doesn't hear through traffic at the
-// same low frequencies. ponytail: first guesses, measure with the real arrays
-export const ACOUSTIC_RANGE: Record<Noise, number> = { rural: 500, suburban: 300, urban: 150 };
-
-// A higher mast clears trees, buildings and fences: +5 % range per metre above the default
-// mast, 0.85× at ground level, at most 2×. Sound bends around clutter: audio not scaled.
-// ponytail: guessed rule while terrain is bare ground (EU-DEM); drop it once a surface
-// model with trees and buildings (national LiDAR) makes the line-of-sight check do this
-const mastGain = (s: Sensor) =>
-  Math.min(2, Math.max(0.85, 1 + (mastOf(s) - SENSOR_MAST_M) * 0.05));
-
-export const rangeOf = (s: Sensor) =>
-  s.type === "audio"
-    ? ACOUSTIC_RANGE[noiseOf(s)]
-    : Math.round(SENSOR_TYPES[s.type].range * mastGain(s));
-export const noiseOf = (s: Sensor): Noise => s.noise ?? s.autoNoise ?? "suburban";
-export const mastOf = (s: Sensor) => s.mastM ?? SENSOR_MAST_M;
-
-const SAVE_DELAY_MS = 800; // batch quick edits (e.g. several placements) into one save
-
-// The current sensor plan: saved in this browser on every change
-export function useSensors() {
-  const local = loadLocal();
-  const name = ref(local?.name ?? "");
-  const sensors = ref<Sensor[]>(local?.sensors ?? []);
-  const nextId = () => Math.max(0, ...sensors.value.map((s) => s.id)) + 1;
-
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  watch(
-    [name, sensors],
-    () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => savePlan({ name: name.value, sensors: sensors.value }), SAVE_DELAY_MS);
-    },
-    { deep: true },
-  );
-
-  // Audio sensors without a hand-set noise level get one from the map; again after a move
-  const classifiedAt = new Map<number, string>();
-  watch(
-    sensors,
-    (list) => {
-      for (const s of list) {
-        const at = `${s.lat},${s.lng}`;
-        if (s.type !== "audio" || s.noise || classifiedAt.get(s.id) === at) continue;
-        classifiedAt.set(s.id, at);
-        const { id, lat, lng } = s;
-        noiseAt(lat, lng).then((n) => {
-          if (!n) return void classifiedAt.delete(id); // tiles failed: retry on the next change
-          // The plan may have been replaced or the sensor moved meanwhile
-          const cur = sensors.value.find((x) => x.id === id && x.lat === lat && x.lng === lng);
-          if (cur) cur.autoNoise = n;
-        });
-      }
-    },
-    { deep: true, immediate: true },
-  );
-
-  function replace(plan: Plan) {
-    name.value = plan.name;
-    sensors.value = plan.sensors;
-  }
-
-  return {
-    name,
-    sensors,
-    replace,
-    add(type: SensorType, lat: number, lng: number) {
-      sensors.value.push({ id: nextId(), type, lat, lng });
-    },
-    move(id: number, lat: number, lng: number) {
-      const s = sensors.value.find((s) => s.id === id);
-      if (s) Object.assign(s, { lat, lng });
-    },
-    setMast(id: number, m: number) {
-      const s = sensors.value.find((s) => s.id === id);
-      if (s) s.mastM = m;
-    },
-    setNoise(id: number, n: Noise | undefined) {
-      const s = sensors.value.find((s) => s.id === id);
-      if (s) s.noise = n; // undefined: back to the map's guess
-    },
-    remove(id: number) {
-      sensors.value = sensors.value.filter((s) => s.id !== id);
-    },
-    clear() {
-      sensors.value = [];
-    },
-  };
-}
+export const rangeOf = (s: Sensor) => SENSOR_TYPES[s.type].range;

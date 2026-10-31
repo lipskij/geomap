@@ -6,7 +6,7 @@ import { source } from "../api";
 import { liveStatus } from "../live";
 import { t } from "../i18n";
 
-type Mode = "monitor" | "planner" | "detection";
+type Mode = "monitor" | "detection";
 defineProps<{
   mode: Mode;
   history: boolean; // flight logs on the Pi can be listed (live feed)
@@ -47,7 +47,7 @@ function onFile(e: Event) {
     <div v-if="open" class="body">
       <div class="mode" role="tablist">
         <button
-          v-for="m in ['monitor', 'planner', 'detection'] as const"
+          v-for="m in ['monitor', 'detection'] as const"
           :key="m"
           role="tab"
           :aria-selected="mode === m"

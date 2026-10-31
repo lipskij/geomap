@@ -2,8 +2,6 @@
 import { computed, nextTick, ref, shallowRef, watch } from "vue";
 import MapView, { type BaseLayer } from "./components/MapView.vue";
 import LayersPanel from "./components/LayersPanel.vue";
-import PlannerPanel from "./components/PlannerPanel.vue";
-import { useSensors, type SensorType } from "./composables/useSensors";
 import DroneList from "./components/DroneList.vue";
 import ToastStack from "./components/ToastStack.vue";
 import ReplayPanel from "./components/ReplayPanel.vue";
@@ -95,18 +93,12 @@ const replayStats = computed(() =>
 const mapView = ref<InstanceType<typeof MapView>>();
 const base = ref<BaseLayer>("light");
 const showZones = ref(false);
-const showSensorLayer = ref(false); // monitor: detecting sensors on the map (planner/detection always show theirs)
+const showSensorLayer = ref(false); // monitor: detecting sensors on the map (detection always shows them)
 
-// Monitor: live drones. Planner: place sensors on the map (the right panel switches)
-const mode = ref<"monitor" | "planner" | "detection">("monitor");
-const selectedSensor = ref<number | null>(null); // planner / detection: highlighted sensor
-const placing = ref<SensorType | null>(null); // planner tool picked for click-to-place
-const overlap = ref<SensorType | "all" | null>("all"); // planner overlap shading, null = off
-const liveInPlanner = ref(false); // planner switch: also show live drones and monitoring
-const showDrones = computed(() => mode.value !== "planner" || liveInPlanner.value);
-const plan = useSensors();
+// Monitor: live drones. Detection: the acoustic mesh (the right panel switches)
+const mode = ref<"monitor" | "detection">("monitor");
+const selectedSensor = ref<number | null>(null); // detection: highlighted sensor
 watch(mode, (m) => {
-  placing.value = null;
   if (m === "detection") nextTick(() => mapView.value?.fitSensors()); // show the mesh
 });
 // Panels follow the base map: dark colours on the dark map, light ones otherwise
@@ -189,11 +181,6 @@ watch(checks, (all) => {
   }
 });
 
-// Hiding drones (planner mode) drops focus and follow: the map must not chase a hidden drone
-watch(showDrones, (on) => {
-  if (!on) following.value = selected.value = null;
-});
-
 // Stop following a drone that has disappeared
 watch(activeDrones, (list) => {
   if (following.value && !list.some((d) => d.basic_id === following.value))
@@ -259,18 +246,12 @@ function onExport(id: string, format: ExportFormat) {
     :right-inset="340"
     :base="base"
     :show-zones="showZones"
-    :sensors="mode === 'planner' ? plan.sensors.value : acousticSensors"
-    :planning="mode === 'planner'"
+    :sensors="acousticSensors"
     :show-sensors="mode !== 'monitor' || showSensorLayer"
     :selected-sensor="selectedSensor"
-    :placing="placing"
-    :overlap="overlap"
-    :show-drones="showDrones"
     :acoustic="acoustic"
     :acoustic-sensors="acousticSensors"
     @unfollow="following = null"
-    @add-sensor="plan.add"
-    @move-sensor="plan.move"
     @select-sensor="(id) => (selectedSensor = id)"
   />
   <MainMenu
@@ -280,30 +261,6 @@ function onExport(id: string, format: ExportFormat) {
     @load="replay.load"
     @history="showHistory = !showHistory"
     @layers="showLayers = true"
-  />
-  <PlannerPanel
-    v-if="mode === 'planner'"
-    :name="plan.name.value"
-    :sensors="plan.sensors.value"
-    :placing="placing"
-    :overlap="overlap"
-    :show-live="liveInPlanner"
-    :selected="selectedSensor"
-    @pick="(type) => (placing = type)"
-    @select="(s) => ((selectedSensor = s.id), mapView?.panTo(s.lat, s.lng))"
-    @remove="plan.remove"
-    @mast="plan.setMast"
-    @noise="plan.setNoise"
-    @clear="plan.clear"
-    @rename="(n) => (plan.name.value = n)"
-    @overlap="(v) => (overlap = v)"
-    @show-live="(v) => (liveInPlanner = v)"
-    @import="
-      (p) => {
-        plan.replace(p);
-        nextTick(() => mapView?.fitSensors());
-      }
-    "
   />
   <DetectionPanel
     v-if="mode === 'detection'"
@@ -336,13 +293,11 @@ function onExport(id: string, format: ExportFormat) {
     @export="onExport"
   />
   <ToastStack
-    v-if="showDrones"
     :toasts="toasts"
     @select="focusDrone"
     @dismiss="dismiss"
   />
   <ReplayPanel
-    v-show="showDrones"
     :file-name="replay.fileName.value"
     :drone-count="replay.tracks.value.length"
     :playing="replay.playing.value"
@@ -453,7 +408,7 @@ button {
   text-align: left;
 }
 
-/* Right-hand panel (drone list / sensor planner) and its section headings */
+/* Right-hand panel (drone list / detection) and its section headings */
 .side-panel {
   position: absolute;
   top: 10px;
